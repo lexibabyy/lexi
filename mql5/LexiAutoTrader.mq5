@@ -42,8 +42,8 @@ input int      InpATRPeriod          = 14;        // ATR period
 input double   InpSLAtrMult          = 1.5;       // Stop-loss = ATR x this
 input double   InpTPAtrMult          = 4.0;       // Take-profit = ATR x this (wide = let it run)
 input double   InpMinLot             = 0.01;      // Minimum lot
-input double   InpMaxLot             = 1.0;       // Maximum lot
-input double   InpMaxDailyLossPct    = 5.0;       // Stop trading after this daily loss (%)
+input double   InpMaxLot             = 0.01;      // Maximum lot (pinned to min for small accounts)
+input double   InpMaxDailyLossPct    = 10.0;      // Stop trading after this daily loss (%)
 
 //--- Inputs: "Let winners run" --------------------------------------
 input bool     InpUseBreakeven       = true;      // Move SL to entry once in profit
@@ -53,16 +53,16 @@ input double   InpTrailAtrMult       = 2.0;       // Trail distance = ATR x this
 
 //--- Inputs: Multiple entries (scale in) ----------------------------
 input bool     InpPyramid            = true;      // Keep adding entries along the trend
-input int      InpSpacingBars        = 3;         // Min bars between added entries
+input int      InpSpacingBars        = 6;         // Min bars between added entries
 input bool     InpReverseOnOpposite  = false;     // Close opposite trades when signal flips
 
-//--- Inputs: Close-in-profit ----------------------------------------
+//--- Inputs: Close-in-profit (values in ACCOUNT ccy = CENTS on a cent acct)
 input bool     InpCloseInProfit      = true;      // Close a position once it shows profit
-input double   InpMinProfitMoney     = 0.50;      // Min profit (account ccy) to close one
+input double   InpMinProfitMoney     = 5.0;       // Min profit to close one (e.g. 5 cents)
 input double   InpBasketProfitMoney  = 0.0;       // Close ALL when total profit >= this (0=off)
 
 //--- Inputs: General ------------------------------------------------
-input int      InpMaxOpenPositions   = 5;         // Max simultaneous positions
+input int      InpMaxOpenPositions   = 2;         // Max simultaneous positions
 input long     InpMagicNumber        = 532023;    // Unique ID for this EA's trades
 input int      InpSlippagePoints     = 30;        // Max slippage (points)
 

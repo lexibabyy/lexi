@@ -23,22 +23,29 @@ trading:
   # How often the bot wakes up to evaluate the market (seconds).
   poll_interval_seconds: 15
   # Maximum number of simultaneous open positions (multiple entries).
-  max_open_positions: 5
+  # Kept low for a small cent account so stacked gold trades can't
+  # margin-call it. Raise only once you have more balance.
+  max_open_positions: 2
 
 risk:
   # Percentage of account equity risked per trade (used to size
   # the lot relative to the stop-loss distance).
-  risk_per_trade_pct: 1.0
+  # NOTE: tuned for a small CENT account (~1000 cents balance). On such a
+  # tiny balance the broker's minimum lot will usually risk MORE than this
+  # target; the sizer then falls back to min_lot. Keep max_lot at min_lot
+  # so it can never oversize.
+  risk_per_trade_pct: 2.0
   # Stop-loss / take-profit expressed as ATR multiples.
   atr_period: 14
   stop_loss_atr_mult: 1.5
   take_profit_atr_mult: 3.0
-  # Hard caps so a bad config can never blow the account.
+  # Hard caps so a bad config can never blow the account. Pinned to the
+  # broker minimum so every entry is the smallest possible size.
   min_lot: 0.01
-  max_lot: 1.0
-  # Daily loss limit (% of starting-of-day balance). Bot stops
-  # opening new trades once this is breached.
-  max_daily_loss_pct: 5.0
+  max_lot: 0.01
+  # Daily loss limit (% of starting-of-day balance). Tightened for the
+  # small account: stop trading for the day after a 10% drawdown.
+  max_daily_loss_pct: 10.0
 
 strategy:
   # Built-in strategy: EMA crossover filtered by RSI.
@@ -54,20 +61,24 @@ strategy:
 # ----------------------------------------------------------------
 # Multiple entries: keep adding positions in the trend direction
 # (scale in), spaced out over time, up to max_open_positions.
+# Kept conservative for the small cent account so stacked gold
+# positions can't blow it up.
 # ----------------------------------------------------------------
 entries:
   pyramid: true              # add more entries along the trend
-  spacing_bars: 3            # min closed bars between added entries
+  spacing_bars: 6            # wait more bars between added entries
   reverse_on_opposite: false # don't force-close when the signal flips
 
 # ----------------------------------------------------------------
 # Exits: as soon as a position has earnings, close it.
+# Values are in your ACCOUNT CURRENCY, which on a cent account is
+# CENTS. e.g. min_profit_money: 5.0 = close once a trade is +5 cents.
 # ----------------------------------------------------------------
 exit:
   close_in_profit: true      # close each position once it's in profit
-  min_profit_money: 0.50     # min floating profit (account ccy) to close one
+  min_profit_money: 5.0      # close a trade once it is +5 cents (clears spread)
   # If > 0, close ALL positions together once their combined floating
-  # profit reaches this amount (account currency). 0 disables.
+  # profit reaches this many cents. 0 disables.
   basket_profit_money: 0.0
 
 runtime:
