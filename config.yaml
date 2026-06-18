@@ -1,0 +1,59 @@
+# ============================================================
+# MetaTrader 5 Automated Trading Bot - Configuration
+# ============================================================
+# Copy this file and adjust values to suit your account and
+# risk appetite. NEVER commit real credentials to git.
+# ============================================================
+
+account:
+  # Leave login/password/server empty to attach to an already
+  # running, logged-in MT5 terminal. Fill them to log in
+  # programmatically.
+  login:                     # e.g. 12345678
+  password:                  # your account password
+  server:                    # e.g. "MetaQuotes-Demo"
+  # Path to terminal64.exe (optional, only if auto-detect fails)
+  terminal_path:
+
+trading:
+  symbol: "EURUSD"           # instrument to trade
+  timeframe: "M5"            # M1, M5, M15, M30, H1, H4, D1
+  magic_number: 532023       # unique id to tag this bot's trades
+  deviation: 20              # max slippage in points
+  # How often the bot wakes up to evaluate the market (seconds).
+  poll_interval_seconds: 15
+  # Maximum number of simultaneous open positions this bot manages.
+  max_open_positions: 1
+
+risk:
+  # Percentage of account equity risked per trade (used to size
+  # the lot relative to the stop-loss distance).
+  risk_per_trade_pct: 1.0
+  # Stop-loss / take-profit expressed as ATR multiples.
+  atr_period: 14
+  stop_loss_atr_mult: 1.5
+  take_profit_atr_mult: 3.0
+  # Hard caps so a bad config can never blow the account.
+  min_lot: 0.01
+  max_lot: 1.0
+  # Daily loss limit (% of starting-of-day balance). Bot stops
+  # opening new trades once this is breached.
+  max_daily_loss_pct: 5.0
+
+strategy:
+  # Built-in strategy: EMA crossover filtered by RSI.
+  name: "ema_rsi"
+  fast_ema: 12
+  slow_ema: 26
+  rsi_period: 14
+  rsi_overbought: 70
+  rsi_oversold: 30
+  # Number of historical bars to pull each evaluation.
+  history_bars: 500
+
+runtime:
+  # If true the bot only logs the signals it WOULD take and never
+  # sends a single real order. Always start here.
+  dry_run: true
+  log_level: "INFO"          # DEBUG, INFO, WARNING, ERROR
+  log_file: "bot.log"

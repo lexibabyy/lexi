@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Bot artifacts
+*.log
+bot.log
+
+# Local / secret config
+config.local.yaml
+.env
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
