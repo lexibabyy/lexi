@@ -2,10 +2,14 @@
 //|                                              LexiAutoTrader.mq5   |
 //|   Automated MetaTrader 5 Expert Advisor                          |
 //|                                                                  |
-//|   Strategy: EMA crossover filtered by RSI.                       |
-//|   Exits   : ATR stop-loss + take-profit, with breakeven and a    |
-//|             trailing stop so winning trades are allowed to run   |
-//|             for higher earnings.                                 |
+//|   Designed for XAUUSD (gold) — attach it to a XAUUSD chart.      |
+//|                                                                  |
+//|   Entries : EMA crossover filtered by RSI, then keeps adding     |
+//|             entries along the trend (scale in / multiple         |
+//|             positions), spaced out by bars, up to a max.         |
+//|   Exits   : closes EACH position as soon as it shows profit      |
+//|             (close-in-profit). An ATR stop-loss, breakeven and   |
+//|             trailing stop act as a safety net per position.      |
 //|                                                                  |
 //|   HOW TO USE (so it trades by itself while you watch on phone):  |
 //|     1. Open MetaEditor in MT5 desktop, paste this file, Compile. |
@@ -47,10 +51,20 @@ input double   InpBreakevenAtrMult   = 1.0;       // Profit (in ATR) before brea
 input bool     InpUseTrailing        = true;      // Trail the stop behind price
 input double   InpTrailAtrMult       = 2.0;       // Trail distance = ATR x this
 
+//--- Inputs: Multiple entries (scale in) ----------------------------
+input bool     InpPyramid            = true;      // Keep adding entries along the trend
+input int      InpSpacingBars        = 3;         // Min bars between added entries
+input bool     InpReverseOnOpposite  = false;     // Close opposite trades when signal flips
+
+//--- Inputs: Close-in-profit ----------------------------------------
+input bool     InpCloseInProfit      = true;      // Close a position once it shows profit
+input double   InpMinProfitMoney     = 0.50;      // Min profit (account ccy) to close one
+input double   InpBasketProfitMoney  = 0.0;       // Close ALL when total profit >= this (0=off)
+
 //--- Inputs: General ------------------------------------------------
-input int      InpMaxOpenPositions   = 1;         // Max simultaneous positions
+input int      InpMaxOpenPositions   = 5;         // Max simultaneous positions
 input long     InpMagicNumber        = 532023;    // Unique ID for this EA's trades
-input int      InpSlippagePoints     = 20;        // Max slippage (points)
+input int      InpSlippagePoints     = 30;        // Max slippage (points)
 
 //--- Globals --------------------------------------------------------
 CTrade        trade;
@@ -61,6 +75,7 @@ int           hATR     = INVALID_HANDLE;
 datetime      g_lastBarTime = 0;
 datetime      g_currentDay  = 0;
 double        g_dayStartBalance = 0.0;
+int           g_barsSinceEntry = 100000;   // large so first entry isn't blocked
 
 //+------------------------------------------------------------------+
 //| Initialisation                                                   |
@@ -113,23 +128,43 @@ void OnDeinit(const int reason)
 //+------------------------------------------------------------------+
 void OnTick()
   {
-   // Manage open trades on every tick (trailing/breakeven need to be
-   // responsive), but only look for NEW entries once per closed bar.
+   // Bank earnings on every tick so we close as soon as a trade is in
+   // profit; also keep trailing/breakeven responsive.
+   TakeProfits();
    ManageOpenPositions();
 
+   // Everything below (entries) is evaluated once per closed bar.
    datetime barTime = iTime(_Symbol, _Period, 0);
    if(barTime == g_lastBarTime)
       return;
    g_lastBarTime = barTime;
+   g_barsSinceEntry++;
 
    RollDailyBalance();
 
-   int signal = GetSignal();          // +1 buy, -1 sell, 0 hold
-   if(signal == 0)
+   int signal = GetSignal();          // +1 buy, -1 sell, 0 hold (fresh cross)
+   int trend  = Trend();              // +1 up, -1 down, 0 undecided
+
+   int direction = 0;
+   bool isPyramid = false;
+   if(signal != 0)
+     {
+      direction = signal;             // a fresh crossover always counts
+      if(InpReverseOnOpposite)
+         CloseOppositePositions(signal);
+     }
+   else if(InpPyramid && trend != 0)
+     {
+      direction = trend;              // otherwise scale into the trend
+      isPyramid = true;
+     }
+
+   if(direction == 0)
       return;
 
-   // Reverse-on-signal: close opposite positions first.
-   CloseOppositePositions(signal);
+   // Space out added (pyramid) entries; a fresh signal is exempt.
+   if(isPyramid && g_barsSinceEntry < InpSpacingBars)
+      return;
 
    if(CountMyPositions() >= InpMaxOpenPositions)
       return;
@@ -137,7 +172,82 @@ void OnTick()
    if(!DailyLossOK())
       return;
 
-   OpenTrade(signal);
+   OpenTrade(direction);
+   g_barsSinceEntry = 0;
+  }
+
+//+------------------------------------------------------------------+
+//| Close any position that is in profit (banks earnings)            |
+//+------------------------------------------------------------------+
+void TakeProfits()
+  {
+   // Basket mode: close everything once combined profit hits the target.
+   if(InpBasketProfitMoney > 0.0)
+     {
+      double total = 0.0;
+      for(int i = PositionsTotal() - 1; i >= 0; i--)
+        {
+         ulong t = PositionGetTicket(i);
+         if(PositionSelectByTicket(t) &&
+            PositionGetInteger(POSITION_MAGIC) == InpMagicNumber &&
+            PositionGetString(POSITION_SYMBOL) == _Symbol)
+            total += PositionGetDouble(POSITION_PROFIT);
+        }
+      if(total >= InpBasketProfitMoney)
+        {
+         CloseAllMine();
+         PrintFormat("Basket profit %.2f >= %.2f: closed all.", total, InpBasketProfitMoney);
+         return;
+        }
+     }
+
+   if(!InpCloseInProfit)
+      return;
+
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+     {
+      ulong ticket = PositionGetTicket(i);
+      if(!PositionSelectByTicket(ticket)) continue;
+      if(PositionGetInteger(POSITION_MAGIC) != InpMagicNumber) continue;
+      if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
+
+      double profit = PositionGetDouble(POSITION_PROFIT);
+      if(profit > 0.0 && profit >= InpMinProfitMoney)
+        {
+         if(trade.PositionClose(ticket))
+            PrintFormat("Banked #%I64u (P/L %.2f).", ticket, profit);
+        }
+     }
+  }
+
+//+------------------------------------------------------------------+
+//| Prevailing trend: fast/slow EMA relationship, RSI-filtered       |
+//+------------------------------------------------------------------+
+int Trend()
+  {
+   double fast[1], slow[1], rsi[1];
+   if(CopyBuffer(hFastEMA, 0, 1, 1, fast) < 1) return(0);
+   if(CopyBuffer(hSlowEMA, 0, 1, 1, slow) < 1) return(0);
+   if(CopyBuffer(hRSI,     0, 1, 1, rsi)  < 1) return(0);
+
+   if(fast[0] > slow[0] && rsi[0] < InpRSIOverbought) return(1);
+   if(fast[0] < slow[0] && rsi[0] > InpRSIOversold)   return(-1);
+   return(0);
+  }
+
+//+------------------------------------------------------------------+
+//| Close every position owned by this EA                            |
+//+------------------------------------------------------------------+
+void CloseAllMine()
+  {
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+     {
+      ulong ticket = PositionGetTicket(i);
+      if(PositionSelectByTicket(ticket) &&
+         PositionGetInteger(POSITION_MAGIC) == InpMagicNumber &&
+         PositionGetString(POSITION_SYMBOL) == _Symbol)
+         trade.PositionClose(ticket);
+     }
   }
 
 //+------------------------------------------------------------------+

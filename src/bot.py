@@ -10,6 +10,7 @@ import logging
 import time
 
 from .config import Config
+from .exits import select_profit_exits
 from .mt5_client import MT5Client, MT5Error
 from .notifier import Notifier
 from .risk import DailyLossGuard, calculate_lot
@@ -26,6 +27,7 @@ class TradingBot:
         self.strategy = build_strategy(config.strategy, config.risk.atr_period)
         self.guard = DailyLossGuard(config.risk)
         self._last_bar_time = None
+        self._bars_since_entry = 10_000  # large so the first entry isn't blocked
         self._running = False
 
     def _notify(self, text: str) -> None:
@@ -65,39 +67,82 @@ class TradingBot:
         if self._last_bar_time is not None and closed_bar_time == self._last_bar_time:
             return
         self._last_bar_time = closed_bar_time
+        self._bars_since_entry += 1
 
         account = self.client.account_info()
         self.guard.update_day(account.balance)
 
-        signal = self.strategy.generate(df)
-        log.info("Bar %s | signal=%s (%s)",
-                 closed_bar_time, signal.type.value, signal.reason)
+        # 1) Bank earnings first: close any position that is in profit.
+        self._take_profits()
 
-        if signal.type == SignalType.HOLD:
+        # 2) Decide whether to add a new entry.
+        signal = self.strategy.generate(df)
+        trend = self.strategy.trend(df)
+        log.info("Bar %s | signal=%s trend=%+d (%s)",
+                 closed_bar_time, signal.type.value, trend, signal.reason)
+
+        fresh = signal.type if signal.type != SignalType.HOLD else None
+
+        if fresh and self.cfg.entries.reverse_on_opposite:
+            self._close_opposite(fresh)
+
+        # Direction: a fresh crossover always counts; otherwise scale into
+        # the prevailing trend if pyramiding is enabled.
+        if fresh:
+            direction = fresh
+            is_pyramid = False
+        elif self.cfg.entries.pyramid and trend != 0:
+            direction = SignalType.BUY if trend > 0 else SignalType.SELL
+            is_pyramid = True
+        else:
             return
 
-        positions = self.client.open_positions()
-
-        # If we already hold a position in the opposite direction, close it
-        # before considering a new entry (simple reverse-on-signal logic).
-        self._maybe_close_opposite(positions, signal)
+        # Space out added (pyramid) entries; the first/fresh entry is exempt.
+        if is_pyramid and self._bars_since_entry < self.cfg.entries.spacing_bars:
+            return
 
         if len(self.client.open_positions()) >= self.cfg.trading.max_open_positions:
-            log.info("Max open positions reached; skipping entry.")
+            log.info("Max open positions (%d) reached; not adding more.",
+                     self.cfg.trading.max_open_positions)
             return
 
         if not self.guard.can_trade(account.equity):
             return
 
-        self._open_trade(signal, account.equity)
+        self._open_trade(direction, signal.atr, account.equity,
+                         reason=signal.reason if fresh else "scale-in (trend)")
 
-    def _maybe_close_opposite(self, positions, signal: Signal) -> None:
+    def _take_profits(self) -> None:
+        """Close positions that have earnings (the core requested behaviour)."""
+        positions = self.client.open_positions()
+        if not positions:
+            return
+
+        to_close, reason = select_profit_exits(
+            positions,
+            self.cfg.exit.min_profit_money,
+            self.cfg.exit.basket_profit_money,
+        )
+        if not self.cfg.exit.close_in_profit and "basket" not in reason:
+            return
+
+        for pos in to_close:
+            if self.cfg.runtime.dry_run:
+                log.info("[DRY-RUN] Would close #%s (P/L %+.2f) — %s",
+                         pos.ticket, pos.profit, reason)
+                continue
+            self.client.close_position(pos)
+            self._notify(
+                f"💰 Banked #{pos.ticket} (P/L {pos.profit:+.2f}) — {reason}"
+            )
+
+    def _close_opposite(self, direction: SignalType) -> None:
         import MetaTrader5 as mt5  # local import: only needed when live
 
-        for pos in positions:
+        for pos in self.client.open_positions():
             is_buy = pos.type == mt5.POSITION_TYPE_BUY
-            opposite = (is_buy and signal.type == SignalType.SELL) or (
-                not is_buy and signal.type == SignalType.BUY
+            opposite = (is_buy and direction == SignalType.SELL) or (
+                not is_buy and direction == SignalType.BUY
             )
             if not opposite:
                 continue
@@ -110,12 +155,12 @@ class TradingBot:
                     f"(P/L {pos.profit:+.2f})"
                 )
 
-    def _open_trade(self, signal: Signal, equity: float) -> None:
+    def _open_trade(self, direction: SignalType, atr: float | None,
+                    equity: float, reason: str) -> None:
         symbol_info = self.client.symbol_info()
         tick = self.client.tick()
-        point = symbol_info.point
 
-        atr_value = signal.atr or 0.0
+        atr_value = atr or 0.0
         if atr_value <= 0:
             log.warning("ATR unavailable; skipping trade to avoid undefined risk.")
             return
@@ -123,7 +168,7 @@ class TradingBot:
         sl_distance = atr_value * self.cfg.risk.stop_loss_atr_mult
         tp_distance = atr_value * self.cfg.risk.take_profit_atr_mult
 
-        if signal.type == SignalType.BUY:
+        if direction == SignalType.BUY:
             entry = tick.ask
             sl = entry - sl_distance
             tp = entry + tp_distance
@@ -140,26 +185,28 @@ class TradingBot:
         if self.cfg.runtime.dry_run:
             log.info(
                 "[DRY-RUN] Would %s %.2f lots @ %.5f sl=%.5f tp=%.5f (risk %.2f%%)",
-                signal.type.value.upper(), lot, entry, sl, tp,
+                direction.value.upper(), lot, entry, sl, tp,
                 self.cfg.risk.risk_per_trade_pct,
             )
             self._notify(
-                f"🧪 <b>[DRY-RUN]</b> Would {signal.type.value.upper()} "
+                f"🧪 <b>[DRY-RUN]</b> Would {direction.value.upper()} "
                 f"{lot} {self.cfg.trading.symbol} @ {entry:.5f}\n"
-                f"SL {sl:.5f} | TP {tp:.5f}\n<i>{signal.reason}</i>"
+                f"SL {sl:.5f} | TP {tp:.5f}\n<i>{reason}</i>"
             )
+            self._bars_since_entry = 0
             return
 
         self.client.send_market_order(
-            side=signal.type.value,
+            side=direction.value,
             volume=lot,
             sl=sl,
             tp=tp,
-            comment=f"ema_rsi {signal.reason}"[:31],
+            comment=f"ema_rsi {reason}"[:31],
         )
-        emoji = "🟢" if signal.type == SignalType.BUY else "🔴"
+        self._bars_since_entry = 0
+        emoji = "🟢" if direction == SignalType.BUY else "🔴"
         self._notify(
-            f"{emoji} <b>{signal.type.value.upper()} {self.cfg.trading.symbol}</b>\n"
+            f"{emoji} <b>{direction.value.upper()} {self.cfg.trading.symbol}</b>\n"
             f"{lot} lots @ {entry:.5f}\n"
-            f"SL {sl:.5f} | TP {tp:.5f}\n<i>{signal.reason}</i>"
+            f"SL {sl:.5f} | TP {tp:.5f}\n<i>{reason}</i>"
         )

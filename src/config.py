@@ -18,12 +18,12 @@ class AccountConfig:
 
 @dataclass
 class TradingConfig:
-    symbol: str = "EURUSD"
+    symbol: str = "XAUUSD"
     timeframe: str = "M5"
     magic_number: int = 532023
-    deviation: int = 20
+    deviation: int = 30
     poll_interval_seconds: int = 15
-    max_open_positions: int = 1
+    max_open_positions: int = 5
 
 
 @dataclass
@@ -46,6 +46,33 @@ class StrategyConfig:
     rsi_overbought: float = 70.0
     rsi_oversold: float = 30.0
     history_bars: int = 500
+
+
+@dataclass
+class EntriesConfig:
+    # Keep adding entries in the prevailing trend direction (scale in)
+    # instead of taking a single trade per crossover.
+    pyramid: bool = True
+    # Minimum number of closed bars between added entries, so the bot
+    # spaces its entries out instead of stacking them all on one bar.
+    spacing_bars: int = 3
+    # If True, close opposite-direction positions when the signal flips.
+    # Off by default for the scale-in + take-profit style.
+    reverse_on_opposite: bool = False
+
+
+@dataclass
+class ExitConfig:
+    # Core behaviour you asked for: as soon as a position has earnings,
+    # close it. A small minimum clears spread/commission so we don't
+    # close for a fraction of a cent.
+    close_in_profit: bool = True
+    # Minimum floating profit (in account currency) before a single
+    # position is closed.
+    min_profit_money: float = 0.50
+    # If > 0, close EVERY open position at once when their combined
+    # floating profit reaches this amount (account currency). 0 disables.
+    basket_profit_money: float = 0.0
 
 
 @dataclass
@@ -73,6 +100,8 @@ class Config:
     trading: TradingConfig = field(default_factory=TradingConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
+    entries: EntriesConfig = field(default_factory=EntriesConfig)
+    exit: ExitConfig = field(default_factory=ExitConfig)
     runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
 
@@ -86,6 +115,8 @@ class Config:
             trading=TradingConfig(**(raw.get("trading") or {})),
             risk=RiskConfig(**(raw.get("risk") or {})),
             strategy=StrategyConfig(**(raw.get("strategy") or {})),
+            entries=EntriesConfig(**(raw.get("entries") or {})),
+            exit=ExitConfig(**(raw.get("exit") or {})),
             runtime=RuntimeConfig(**(raw.get("runtime") or {})),
             telegram=TelegramConfig(**(raw.get("telegram") or {})),
         )

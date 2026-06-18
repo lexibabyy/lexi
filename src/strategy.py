@@ -37,6 +37,10 @@ class Strategy:
     def generate(self, df: pd.DataFrame) -> Signal:  # pragma: no cover - interface
         raise NotImplementedError
 
+    def trend(self, df: pd.DataFrame) -> int:  # pragma: no cover - interface
+        """Return the prevailing direction: +1 up, -1 down, 0 undecided."""
+        raise NotImplementedError
+
 
 class EmaRsiStrategy(Strategy):
     def __init__(self, cfg: StrategyConfig, atr_period: int):
@@ -79,6 +83,28 @@ class EmaRsiStrategy(Strategy):
             )
 
         return Signal(SignalType.HOLD, reason="no crossover", atr=atr_now)
+
+    def trend(self, df: pd.DataFrame) -> int:
+        """Direction of the fast/slow EMA relationship, RSI-filtered.
+
+        Used for scaling additional entries into an existing move even
+        when there is no fresh crossover on this bar.
+        """
+        needed = max(self.cfg.slow_ema, self.cfg.rsi_period) + 2
+        if len(df) < needed:
+            return 0
+
+        close = df["close"]
+        fast = indicators.ema(close, self.cfg.fast_ema)
+        slow = indicators.ema(close, self.cfg.slow_ema)
+        rsi = indicators.rsi(close, self.cfg.rsi_period)
+
+        i = -2  # last closed bar
+        if fast.iloc[i] > slow.iloc[i] and rsi.iloc[i] < self.cfg.rsi_overbought:
+            return 1
+        if fast.iloc[i] < slow.iloc[i] and rsi.iloc[i] > self.cfg.rsi_oversold:
+            return -1
+        return 0
 
 
 def build_strategy(cfg: StrategyConfig, atr_period: int) -> Strategy:

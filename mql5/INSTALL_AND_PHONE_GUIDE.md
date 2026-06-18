@@ -44,7 +44,7 @@ What you *can* do — and what this guide sets up — is:
 ## Step 2 — Test it on a DEMO account first
 
 1. In MT5: **File → Open an Account** → pick a broker → choose **Demo**.
-2. Open a chart for the symbol you want (e.g. **EURUSD**) and set the timeframe
+2. Open a chart for the symbol you want (e.g. **XAUUSD**) and set the timeframe
    (e.g. **M5**).
 3. From **Navigator → Expert Advisors**, drag **LexiAutoTrader** onto the chart.
 4. In the dialog, tick **Allow Algo Trading**, review the inputs, click **OK**.
@@ -76,19 +76,29 @@ What you *can* do — and what this guide sets up — is:
 
 ---
 
-## "Close positions with high earnings" — how that's handled
+## Multiple entries + close-in-profit (what you asked for)
 
-You asked for it to aim for bigger wins. The EA does three things to let
-winners run instead of closing too early:
+The EA is set up to **open multiple entries** and **close each one as soon as
+it has earnings**:
 
-- **Wide take-profit** — `InpTPAtrMult = 4.0` (take-profit is 4× ATR away,
-  vs a 1.5× ATR stop). The reward target is much larger than the risk.
-- **Breakeven** — once a trade moves ~1× ATR in profit, the stop is moved to
-  your entry price, so a winner can't easily turn into a loss.
-- **Trailing stop** — the stop then follows price ~2× ATR behind, locking in
-  more profit as the move extends, and only closing when price finally turns.
+- **Multiple entries (scale in)** — `InpPyramid = true`. After the first
+  entry it keeps adding positions in the trend direction, spaced by
+  `InpSpacingBars` bars, up to `InpMaxOpenPositions` (default 5).
+- **Close in profit** — `InpCloseInProfit = true`. On every tick, any position
+  whose floating profit is at least `InpMinProfitMoney` (default 0.50 in your
+  account currency) is closed immediately. So winners get banked as they
+  appear.
+- **Basket option** — set `InpBasketProfitMoney` above 0 to instead close
+  **all** positions at once when their combined profit reaches that amount.
 
-You can tune all of these in the EA inputs when you attach it to the chart.
+As a **safety net** each position still carries an ATR stop-loss, plus optional
+breakeven and trailing stop, so a losing entry can't run unbounded. Tune any of
+these in the EA inputs when you attach it to the chart.
+
+> ⚠️ Note: closing only winners while losers stay open (a "grid"/martingale-ish
+> pattern) can show many small wins but leave large open losses in a strong
+> adverse trend. The ATR stop-loss and the daily-loss limit exist to cap that —
+> keep them on, and size small. Demo-test thoroughly first.
 
 > ⚠️ **No bot can guarantee high earnings or any profit.** Bigger targets also
 > mean some winners turn around before hitting them. Always demo-test first,

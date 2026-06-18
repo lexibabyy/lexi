@@ -16,14 +16,14 @@ account:
   terminal_path:
 
 trading:
-  symbol: "EURUSD"           # instrument to trade
+  symbol: "XAUUSD"           # instrument to trade (gold)
   timeframe: "M5"            # M1, M5, M15, M30, H1, H4, D1
   magic_number: 532023       # unique id to tag this bot's trades
-  deviation: 20              # max slippage in points
+  deviation: 30              # max slippage in points (gold needs a bit more)
   # How often the bot wakes up to evaluate the market (seconds).
   poll_interval_seconds: 15
-  # Maximum number of simultaneous open positions this bot manages.
-  max_open_positions: 1
+  # Maximum number of simultaneous open positions (multiple entries).
+  max_open_positions: 5
 
 risk:
   # Percentage of account equity risked per trade (used to size
@@ -50,6 +50,25 @@ strategy:
   rsi_oversold: 30
   # Number of historical bars to pull each evaluation.
   history_bars: 500
+
+# ----------------------------------------------------------------
+# Multiple entries: keep adding positions in the trend direction
+# (scale in), spaced out over time, up to max_open_positions.
+# ----------------------------------------------------------------
+entries:
+  pyramid: true              # add more entries along the trend
+  spacing_bars: 3            # min closed bars between added entries
+  reverse_on_opposite: false # don't force-close when the signal flips
+
+# ----------------------------------------------------------------
+# Exits: as soon as a position has earnings, close it.
+# ----------------------------------------------------------------
+exit:
+  close_in_profit: true      # close each position once it's in profit
+  min_profit_money: 0.50     # min floating profit (account ccy) to close one
+  # If > 0, close ALL positions together once their combined floating
+  # profit reaches this amount (account currency). 0 disables.
+  basket_profit_money: 0.0
 
 runtime:
   # If true the bot only logs the signals it WOULD take and never

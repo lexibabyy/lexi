@@ -41,8 +41,12 @@ below.
 [`mql5/LexiAutoTrader.mq5`](mql5/LexiAutoTrader.mq5) runs inside MT5 / MT5's
 built-in VPS. Log into the **same account** in the MT5 phone app and watch
 trades appear automatically. Full walkthrough:
-[`mql5/INSTALL_AND_PHONE_GUIDE.md`](mql5/INSTALL_AND_PHONE_GUIDE.md). It adds
-breakeven + trailing stop + a wide take-profit to let winners run.
+[`mql5/INSTALL_AND_PHONE_GUIDE.md`](mql5/INSTALL_AND_PHONE_GUIDE.md).
+
+> **Default setup: XAUUSD (gold), multiple entries, close-in-profit.** The bot
+> scales into the trend with several positions and closes each one as soon as
+> it shows a profit, with an ATR stop-loss + daily-loss limit as the safety
+> net. All tunable in `config.yaml` / the EA inputs.
 
 ## Features
 
@@ -156,6 +160,9 @@ See `config.yaml` for the full annotated list. Key settings:
 | `trading` | `symbol`, `timeframe` | What and on which timeframe to trade |
 | `trading` | `poll_interval_seconds` | How often the bot checks the market |
 | `trading` | `max_open_positions` | Cap on simultaneous bot positions |
+| `entries` | `pyramid` / `spacing_bars` | Add multiple entries along the trend, spaced out |
+| `exit` | `close_in_profit` / `min_profit_money` | Close each position once it's in profit |
+| `exit` | `basket_profit_money` | Close ALL positions when combined profit hits target |
 | `risk` | `risk_per_trade_pct` | % of equity risked per trade |
 | `risk` | `stop_loss_atr_mult` / `take_profit_atr_mult` | SL/TP as ATR multiples |
 | `risk` | `max_daily_loss_pct` | Stop trading after this daily drawdown |
@@ -192,6 +199,7 @@ require MetaTrader 5 to be installed.
     ├── indicators.py   # EMA, RSI, ATR
     ├── strategy.py     # signal generation
     ├── risk.py         # position sizing & daily loss guard
+    ├── exits.py        # close-in-profit / basket exit logic
     ├── bot.py          # the automated trading loop
     ├── notifier.py     # phone push alerts (Telegram)
     └── controller.py   # start/stop the loop in a background thread
