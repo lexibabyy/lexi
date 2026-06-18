@@ -11,6 +11,7 @@ import time
 
 from .config import Config
 from .mt5_client import MT5Client, MT5Error
+from .notifier import Notifier
 from .risk import DailyLossGuard, calculate_lot
 from .strategy import Signal, SignalType, build_strategy
 
@@ -18,13 +19,20 @@ log = logging.getLogger(__name__)
 
 
 class TradingBot:
-    def __init__(self, config: Config, client: MT5Client):
+    def __init__(self, config: Config, client: MT5Client, notifier: Notifier | None = None):
         self.cfg = config
         self.client = client
+        self.notifier = notifier or Notifier()
         self.strategy = build_strategy(config.strategy, config.risk.atr_period)
         self.guard = DailyLossGuard(config.risk)
         self._last_bar_time = None
         self._running = False
+
+    def _notify(self, text: str) -> None:
+        try:
+            self.notifier.send(text)
+        except Exception:  # never let a notification crash the loop
+            log.exception("Notifier failed")
 
     def run(self) -> None:
         self._running = True
@@ -97,6 +105,10 @@ class TradingBot:
                 log.info("[DRY-RUN] Would close position %s on opposite signal", pos.ticket)
             else:
                 self.client.close_position(pos)
+                self._notify(
+                    f"⚪️ Closed #{pos.ticket} on opposite signal "
+                    f"(P/L {pos.profit:+.2f})"
+                )
 
     def _open_trade(self, signal: Signal, equity: float) -> None:
         symbol_info = self.client.symbol_info()
@@ -131,6 +143,11 @@ class TradingBot:
                 signal.type.value.upper(), lot, entry, sl, tp,
                 self.cfg.risk.risk_per_trade_pct,
             )
+            self._notify(
+                f"🧪 <b>[DRY-RUN]</b> Would {signal.type.value.upper()} "
+                f"{lot} {self.cfg.trading.symbol} @ {entry:.5f}\n"
+                f"SL {sl:.5f} | TP {tp:.5f}\n<i>{signal.reason}</i>"
+            )
             return
 
         self.client.send_market_order(
@@ -139,4 +156,10 @@ class TradingBot:
             sl=sl,
             tp=tp,
             comment=f"ema_rsi {signal.reason}"[:31],
+        )
+        emoji = "🟢" if signal.type == SignalType.BUY else "🔴"
+        self._notify(
+            f"{emoji} <b>{signal.type.value.upper()} {self.cfg.trading.symbol}</b>\n"
+            f"{lot} lots @ {entry:.5f}\n"
+            f"SL {sl:.5f} | TP {tp:.5f}\n<i>{signal.reason}</i>"
         )

@@ -56,12 +56,25 @@ class RuntimeConfig:
 
 
 @dataclass
+class TelegramConfig:
+    enabled: bool = False
+    token: Optional[str] = None
+    # Your personal chat id. Only this chat may control the bot and it is
+    # where alerts are sent.
+    chat_id: Optional[str] = None
+    # If true, the bot's auto-trading loop does NOT start on launch; you
+    # start it from your phone with /run. Recommended.
+    start_paused: bool = True
+
+
+@dataclass
 class Config:
     account: AccountConfig = field(default_factory=AccountConfig)
     trading: TradingConfig = field(default_factory=TradingConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
     runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
+    telegram: TelegramConfig = field(default_factory=TelegramConfig)
 
     @staticmethod
     def load(path: str = "config.yaml") -> "Config":
@@ -74,6 +87,7 @@ class Config:
             risk=RiskConfig(**(raw.get("risk") or {})),
             strategy=StrategyConfig(**(raw.get("strategy") or {})),
             runtime=RuntimeConfig(**(raw.get("runtime") or {})),
+            telegram=TelegramConfig(**(raw.get("telegram") or {})),
         )
 
         # Environment variables override file values for secrets so
@@ -84,6 +98,11 @@ class Config:
             cfg.account.password = os.environ["MT5_PASSWORD"]
         if os.getenv("MT5_SERVER"):
             cfg.account.server = os.environ["MT5_SERVER"]
+        if os.getenv("TELEGRAM_TOKEN"):
+            cfg.telegram.token = os.environ["TELEGRAM_TOKEN"]
+            cfg.telegram.enabled = True
+        if os.getenv("TELEGRAM_CHAT_ID"):
+            cfg.telegram.chat_id = os.environ["TELEGRAM_CHAT_ID"]
 
         cfg.validate()
         return cfg

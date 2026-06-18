@@ -13,6 +13,37 @@ daily loss limit, and a safe **dry-run** mode.
 > money you cannot afford to lose. You are solely responsible for any trades
 > placed.
 
+## 📱 Run it from your phone
+
+The MT5 **phone app itself can't run a bot** — automated trading has to run on
+an always-on machine (a cheap Windows **VPS** is the usual choice). There are
+two ways to get the "it's on my phone" experience:
+
+### Option A — Control everything from Telegram (recommended)
+
+[`telegram_bot.py`](telegram_bot.py) turns your phone into the bot's remote
+control. Install the engine once on a VPS, then from the **Telegram app** you:
+
+```
+/run        start auto-trading
+/stop       stop auto-trading
+/status     balance, equity, bot state
+/positions  open positions + live P/L
+/closeall   close everything now
+```
+
+…and you get a 🔔 push alert on every trade it opens or closes. Only your own
+chat id can control it. See **[Phone / Telegram setup](#-phone--telegram-setup)**
+below.
+
+### Option B — Native Expert Advisor + MT5 mobile
+
+[`mql5/LexiAutoTrader.mq5`](mql5/LexiAutoTrader.mq5) runs inside MT5 / MT5's
+built-in VPS. Log into the **same account** in the MT5 phone app and watch
+trades appear automatically. Full walkthrough:
+[`mql5/INSTALL_AND_PHONE_GUIDE.md`](mql5/INSTALL_AND_PHONE_GUIDE.md). It adds
+breakeven + trailing stop + a wide take-profit to let winners run.
+
 ## Features
 
 - 🔌 **Direct MT5 integration** via the official `MetaTrader5` Python package.
@@ -92,6 +123,30 @@ python main.py --live
 
 `--live` overrides `dry_run` and **sends real orders**.
 
+## 📲 Phone / Telegram setup
+
+1. **Create your bot:** in Telegram, message **@BotFather** → `/newbot` → copy
+   the **token** it gives you.
+2. **Find your chat id:** message your new bot anything, then open
+   `https://api.telegram.org/bot<TOKEN>/getUpdates` in a browser and read the
+   `"chat":{"id":...}` value.
+3. **Configure** either via env vars (recommended) or `config.yaml`:
+   ```bash
+   export TELEGRAM_TOKEN="123456:ABC..."
+   export TELEGRAM_CHAT_ID="987654321"
+   ```
+4. **Run it on your always-on PC/VPS:**
+   ```bash
+   python telegram_bot.py            # dry-run (safe default)
+   python telegram_bot.py --live     # real orders
+   ```
+5. From your phone, send `/help`, then `/run` to start trading and `/stop`
+   whenever you want. With `start_paused: true` (default) the bot waits for your
+   `/run` so you're always in control.
+
+> The VPS keeps trading even when your phone is off; you just open Telegram to
+> check in or take over. Only the configured `chat_id` can issue commands.
+
 ## Configuration reference
 
 See `config.yaml` for the full annotated list. Key settings:
@@ -137,7 +192,13 @@ require MetaTrader 5 to be installed.
     ├── indicators.py   # EMA, RSI, ATR
     ├── strategy.py     # signal generation
     ├── risk.py         # position sizing & daily loss guard
-    └── bot.py          # the automated trading loop
+    ├── bot.py          # the automated trading loop
+    ├── notifier.py     # phone push alerts (Telegram)
+    └── controller.py   # start/stop the loop in a background thread
+mql5/
+    ├── LexiAutoTrader.mq5            # native MT5 Expert Advisor
+    └── INSTALL_AND_PHONE_GUIDE.md    # EA install + phone walkthrough
+telegram_bot.py         # control the bot from your phone via Telegram
 ```
 
 ## Disclaimer

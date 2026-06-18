@@ -8,6 +8,7 @@ client for a fake.
 from __future__ import annotations
 
 import logging
+import threading
 from typing import Optional
 
 import pandas as pd
@@ -47,6 +48,9 @@ class MT5Client:
             )
         self.cfg = config
         self._connected = False
+        # The trading loop and the Telegram command handler call into MT5
+        # from different threads; serialise all terminal access.
+        self.lock = threading.RLock()
 
     # ------------------------------------------------------------------
     # Connection lifecycle
@@ -94,9 +98,10 @@ class MT5Client:
 
     def get_rates(self, bars: int) -> pd.DataFrame:
         """Return the most recent ``bars`` candles as a DataFrame."""
-        rates = mt5.copy_rates_from_pos(
-            self.cfg.trading.symbol, self._timeframe(), 0, bars
-        )
+        with self.lock:
+            rates = mt5.copy_rates_from_pos(
+                self.cfg.trading.symbol, self._timeframe(), 0, bars
+            )
         if rates is None or len(rates) == 0:
             raise MT5Error(f"No rate data returned: {mt5.last_error()}")
         df = pd.DataFrame(rates)
@@ -104,13 +109,15 @@ class MT5Client:
         return df
 
     def symbol_info(self):
-        info = mt5.symbol_info(self.cfg.trading.symbol)
+        with self.lock:
+            info = mt5.symbol_info(self.cfg.trading.symbol)
         if info is None:
             raise MT5Error(f"symbol_info() failed: {mt5.last_error()}")
         return info
 
     def tick(self):
-        tick = mt5.symbol_info_tick(self.cfg.trading.symbol)
+        with self.lock:
+            tick = mt5.symbol_info_tick(self.cfg.trading.symbol)
         if tick is None:
             raise MT5Error(f"symbol_info_tick() failed: {mt5.last_error()}")
         return tick
@@ -119,13 +126,15 @@ class MT5Client:
     # Account / positions
     # ------------------------------------------------------------------
     def account_info(self):
-        info = mt5.account_info()
+        with self.lock:
+            info = mt5.account_info()
         if info is None:
             raise MT5Error(f"account_info() failed: {mt5.last_error()}")
         return info
 
     def open_positions(self):
-        positions = mt5.positions_get(symbol=self.cfg.trading.symbol)
+        with self.lock:
+            positions = mt5.positions_get(symbol=self.cfg.trading.symbol)
         if positions is None:
             return []
         return [p for p in positions if p.magic == self.cfg.trading.magic_number]
@@ -169,7 +178,8 @@ class MT5Client:
         if tp is not None:
             request["tp"] = float(tp)
 
-        result = mt5.order_send(request)
+        with self.lock:
+            result = mt5.order_send(request)
         if result is None:
             raise MT5Error(f"order_send returned None: {mt5.last_error()}")
         if result.retcode != mt5.TRADE_RETCODE_DONE:
@@ -205,7 +215,8 @@ class MT5Client:
             "type_time": mt5.ORDER_TIME_GTC,
             "type_filling": mt5.ORDER_FILLING_IOC,
         }
-        result = mt5.order_send(request)
+        with self.lock:
+            result = mt5.order_send(request)
         if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
             raise MT5Error(f"Failed to close position {position.ticket}: {mt5.last_error()}")
         log.info("Closed position %s", position.ticket)

@@ -57,3 +57,20 @@ runtime:
   dry_run: true
   log_level: "INFO"          # DEBUG, INFO, WARNING, ERROR
   log_file: "bot.log"
+
+# ----------------------------------------------------------------
+# Control & monitor the bot from your PHONE via Telegram.
+# Run telegram_bot.py on your always-on PC/VPS, then use the
+# Telegram app on your phone to /run, /stop, /status, /closeall
+# and to receive an alert on every trade.
+# ----------------------------------------------------------------
+telegram:
+  enabled: false
+  # From @BotFather. Prefer the TELEGRAM_TOKEN env var over writing
+  # the token here.
+  token:
+  # Your personal chat id (only this chat can control the bot).
+  chat_id:
+  # If true, auto-trading does NOT start until you send /run from
+  # your phone. Recommended so you stay in control.
+  start_paused: true
