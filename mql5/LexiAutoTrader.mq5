@@ -48,6 +48,7 @@ input double   InpMaxDailyLossPct    = 10.0;      // Stop trading after this dai
 //--- Inputs: "Let winners run" --------------------------------------
 input bool     InpUseBreakeven       = true;      // Move SL to entry once in profit
 input double   InpBreakevenAtrMult   = 1.0;       // Profit (in ATR) before breakeven
+input double   InpLockProfitAtrMult  = 0.3;       // Lock SL this much ATR ABOVE entry (0=just breakeven)
 input bool     InpUseTrailing        = true;      // Trail the stop behind price
 input double   InpTrailAtrMult       = 2.0;       // Trail distance = ATR x this
 
@@ -394,9 +395,11 @@ void ManageOpenPositions()
       if(type == POSITION_TYPE_BUY)
         {
          double profit = bid - entry;
-         // Breakeven: lock in entry once far enough in profit.
+         // Breakeven (+ optional profit lock): once far enough in profit,
+         // pull the SL up to entry plus a slice of ATR so a pullback still
+         // banks a guaranteed gain.
          if(InpUseBreakeven && profit >= atr * InpBreakevenAtrMult)
-            newSL = MathMax(newSL, entry);
+            newSL = MathMax(newSL, entry + atr * InpLockProfitAtrMult);
          // Trailing: keep SL a fixed ATR distance behind price.
          if(InpUseTrailing)
            {
@@ -411,8 +414,9 @@ void ManageOpenPositions()
       else if(type == POSITION_TYPE_SELL)
         {
          double profit = entry - ask;
+         double beTarget = entry - atr * InpLockProfitAtrMult;
          if(InpUseBreakeven && profit >= atr * InpBreakevenAtrMult)
-            newSL = (curSL == 0.0) ? entry : MathMin(newSL, entry);
+            newSL = (curSL == 0.0) ? beTarget : MathMin(newSL, beTarget);
          if(InpUseTrailing)
            {
             double trail = ask + atr * InpTrailAtrMult;
