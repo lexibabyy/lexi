@@ -41,7 +41,7 @@ input bool     InpUseADX             = true;      // Only enter when a real tren
 input int      InpADXPeriod          = 14;        // ADX period
 input double   InpADXMin             = 18.0;      // Min ADX to allow an entry (higher=stricter)
 input bool     InpUseHTFTrend        = true;      // Only trade WITH the higher-timeframe trend
-input ENUM_TIMEFRAMES InpTrendTF      = PERIOD_H1; // Higher timeframe to define the trend
+input ENUM_TIMEFRAMES InpTrendTF      = PERIOD_M30; // Higher timeframe to define the trend
 
 //--- Inputs: Risk & exits -------------------------------------------
 input double   InpRiskPerTradePct    = 1.0;       // Risk per trade (% of equity)
@@ -62,7 +62,7 @@ input double   InpTrailAtrMult       = 2.0;       // Trail distance = ATR x this
 //--- Inputs: Multiple entries (scale in) ----------------------------
 input bool     InpPyramid            = true;      // Keep adding entries along the trend
 input int      InpSpacingBars        = 6;         // Min bars between added entries
-input bool     InpReverseOnOpposite  = false;     // Close opposite trades when signal flips
+input bool     InpReverseOnOpposite  = true;      // Close the basket & flip when the trend reverses
 
 //--- Inputs: GRID mode (stack many trades along the trend) -----------
 input bool     InpGridMode           = true;      // Grid ON: rapidly stack entries WITH the trend
@@ -72,9 +72,11 @@ input double   InpGridStepPoints     = 100;       // Min price gap (points) betw
 input bool     InpCloseInProfit      = true;      // Close a position once it shows profit
 input double   InpMinProfitMoney     = 10.0;      // Min profit to close one (small = fast banking)
 input double   InpBasketProfitMoney  = 0.0;       // Close ALL when total profit >= this (0=off)
+input double   InpMaxBasketLossMoney  = 150.0;    // SAFETY: close ALL once total loss >= this (0=off)
+input bool     InpNoAddWhenLosing     = true;     // Don't add grid entries while the basket is in the red
 
 //--- Inputs: General ------------------------------------------------
-input int      InpMaxOpenPositions   = 8;         // Max simultaneous positions (grid basket size)
+input int      InpMaxOpenPositions   = 5;         // Max simultaneous positions (grid basket size)
 input long     InpMagicNumber        = 532023;    // Unique ID for this EA's trades
 input int      InpSlippagePoints     = 30;        // Max slippage (points)
 
@@ -244,6 +246,11 @@ void TryGridEntry()
          return;
      }
 
+   // Don't throw good money after bad: stop stacking while the basket
+   // is underwater (this is what blows grids up on a reversal).
+   if(InpNoAddWhenLosing && n > 0 && MyBasketProfit() < 0.0)
+      return;
+
    // Only add once price has moved a grid step from the last entry.
    double price = (trend > 0) ? SymbolInfoDouble(_Symbol, SYMBOL_ASK)
                               : SymbolInfoDouble(_Symbol, SYMBOL_BID);
@@ -256,10 +263,41 @@ void TryGridEntry()
   }
 
 //+------------------------------------------------------------------+
+//| Combined floating profit/loss of this EA's open positions        |
+//+------------------------------------------------------------------+
+double MyBasketProfit()
+  {
+   double total = 0.0;
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+     {
+      ulong t = PositionGetTicket(i);
+      if(PositionSelectByTicket(t) &&
+         PositionGetInteger(POSITION_MAGIC) == InpMagicNumber &&
+         PositionGetString(POSITION_SYMBOL) == _Symbol)
+         total += PositionGetDouble(POSITION_PROFIT);
+     }
+   return(total);
+  }
+
+//+------------------------------------------------------------------+
 //| Close any position that is in profit (banks earnings)            |
 //+------------------------------------------------------------------+
 void TakeProfits()
   {
+   // SAFETY circuit breaker: if the whole basket's floating loss reaches
+   // the limit, bail out of everything before it can grow further.
+   if(InpMaxBasketLossMoney > 0.0)
+     {
+      double bp = MyBasketProfit();
+      if(bp <= -InpMaxBasketLossMoney)
+        {
+         CloseAllMine();
+         g_lastGridPrice = 0.0;
+         PrintFormat("BASKET STOP: loss %.2f <= -%.2f. Closed all.", bp, InpMaxBasketLossMoney);
+         return;
+        }
+     }
+
    // Basket mode: close everything once combined profit hits the target.
    if(InpBasketProfitMoney > 0.0)
      {
