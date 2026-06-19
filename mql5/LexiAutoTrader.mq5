@@ -64,13 +64,17 @@ input bool     InpPyramid            = true;      // Keep adding entries along t
 input int      InpSpacingBars        = 6;         // Min bars between added entries
 input bool     InpReverseOnOpposite  = false;     // Close opposite trades when signal flips
 
+//--- Inputs: GRID mode (stack many trades along the trend) -----------
+input bool     InpGridMode           = true;      // Grid: rapidly stack entries WITH the trend
+input double   InpGridStepPoints     = 100;       // Min price gap (points) between grid entries
+
 //--- Inputs: Close-in-profit (values in ACCOUNT ccy = CENTS on a cent acct)
 input bool     InpCloseInProfit      = true;      // Close a position once it shows profit
-input double   InpMinProfitMoney     = 20.0;      // Min profit to close one (higher = no churn, lets it breathe)
+input double   InpMinProfitMoney     = 10.0;      // Min profit to close one (small = fast banking)
 input double   InpBasketProfitMoney  = 0.0;       // Close ALL when total profit >= this (0=off)
 
 //--- Inputs: General ------------------------------------------------
-input int      InpMaxOpenPositions   = 2;         // Max simultaneous positions
+input int      InpMaxOpenPositions   = 8;         // Max simultaneous positions (GRID: many; LOWER for real $!)
 input long     InpMagicNumber        = 532023;    // Unique ID for this EA's trades
 input int      InpSlippagePoints     = 30;        // Max slippage (points)
 
@@ -87,6 +91,7 @@ datetime      g_lastBarTime = 0;
 datetime      g_currentDay  = 0;
 double        g_dayStartBalance = 0.0;
 int           g_barsSinceEntry = 100000;   // large so first entry isn't blocked
+double        g_lastGridPrice  = 0.0;      // price of the most recent grid entry
 
 //+------------------------------------------------------------------+
 //| Initialisation                                                   |
@@ -152,6 +157,11 @@ void OnTick()
    TakeProfits();
    ManageOpenPositions();
 
+   // Grid: stack extra entries along the trend on every tick (not just
+   // per bar), spaced out by price so a basket builds up like a grid.
+   if(InpGridMode)
+      TryGridEntry();
+
    // Everything below (entries) is evaluated once per closed bar.
    datetime barTime = iTime(_Symbol, _Period, 0);
    if(barTime == g_lastBarTime)
@@ -205,6 +215,44 @@ void OnTick()
 
    OpenTrade(direction);
    g_barsSinceEntry = 0;
+  }
+
+//+------------------------------------------------------------------+
+//| Grid: add another entry WITH the trend, spaced out by price       |
+//+------------------------------------------------------------------+
+void TryGridEntry()
+  {
+   int n = CountMyPositions();
+   if(n == 0)
+      g_lastGridPrice = 0.0;        // basket empty -> allow a fresh start
+   if(n >= InpMaxOpenPositions)
+      return;
+   if(!DailyLossOK())
+      return;
+
+   int trend = Trend();
+   if(trend == 0)
+      return;
+
+   // Same trend-quality filters as normal entries.
+   if(InpUseADX && CurrentADX() < InpADXMin)
+      return;
+   if(InpUseHTFTrend)
+     {
+      int htf = HTFTrend();
+      if(htf == 0 || htf != trend)
+         return;
+     }
+
+   // Only add once price has moved a grid step from the last entry.
+   double price = (trend > 0) ? SymbolInfoDouble(_Symbol, SYMBOL_ASK)
+                              : SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double step  = InpGridStepPoints * SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   if(g_lastGridPrice != 0.0 && MathAbs(price - g_lastGridPrice) < step)
+      return;
+
+   OpenTrade(trend);
+   g_lastGridPrice = price;
   }
 
 //+------------------------------------------------------------------+
