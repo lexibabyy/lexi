@@ -48,8 +48,8 @@ input double   InpRiskPerTradePct    = 1.0;       // Risk per trade (% of equity
 input int      InpATRPeriod          = 14;        // ATR period
 input double   InpSLAtrMult          = 1.5;       // Stop-loss = ATR x this
 input double   InpTPAtrMult          = 4.0;       // Take-profit = ATR x this (wide = let it run)
-input double   InpMinLot             = 0.10;      // Minimum lot (DEMO test size; LOWER to 0.01 for a real $10 acct!)
-input double   InpMaxLot             = 0.10;      // Maximum lot (DEMO test size; LOWER to 0.01 for a real $10 acct!)
+input double   InpMinLot             = 0.01;      // Minimum lot (safe size for a small real account)
+input double   InpMaxLot             = 0.01;      // Maximum lot (safe size for a small real account)
 input double   InpMaxDailyLossPct    = 10.0;      // Stop trading after this daily loss (%)
 
 //--- Inputs: "Let winners run" --------------------------------------
@@ -65,16 +65,16 @@ input int      InpSpacingBars        = 6;         // Min bars between added entr
 input bool     InpReverseOnOpposite  = false;     // Close opposite trades when signal flips
 
 //--- Inputs: GRID mode (stack many trades along the trend) -----------
-input bool     InpGridMode           = true;      // Grid: rapidly stack entries WITH the trend
+input bool     InpGridMode           = false;     // Grid OFF for real small accounts (turn on only for demo)
 input double   InpGridStepPoints     = 100;       // Min price gap (points) between grid entries
 
 //--- Inputs: Close-in-profit (values in ACCOUNT ccy = CENTS on a cent acct)
 input bool     InpCloseInProfit      = true;      // Close a position once it shows profit
-input double   InpMinProfitMoney     = 10.0;      // Min profit to close one (small = fast banking)
+input double   InpMinProfitMoney     = 5.0;       // Min profit to close one (cents on a cent acct)
 input double   InpBasketProfitMoney  = 0.0;       // Close ALL when total profit >= this (0=off)
 
 //--- Inputs: General ------------------------------------------------
-input int      InpMaxOpenPositions   = 8;         // Max simultaneous positions (GRID: many; LOWER for real $!)
+input int      InpMaxOpenPositions   = 2;         // Max simultaneous positions (safe for a small account)
 input long     InpMagicNumber        = 532023;    // Unique ID for this EA's trades
 input int      InpSlippagePoints     = 30;        // Max slippage (points)
 
