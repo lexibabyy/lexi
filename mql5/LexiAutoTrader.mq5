@@ -36,6 +36,13 @@ input int      InpRSIPeriod          = 14;        // RSI period
 input double   InpRSIOverbought      = 70.0;      // RSI overbought (block buys above)
 input double   InpRSIOversold        = 30.0;      // RSI oversold (block sells below)
 
+//--- Inputs: Entry-quality filters (avoid choppy, sideways markets) --
+input bool     InpUseADX             = true;      // Only enter when a real trend exists
+input int      InpADXPeriod          = 14;        // ADX period
+input double   InpADXMin             = 22.0;      // Min ADX to allow an entry (higher=stricter)
+input bool     InpUseHTFTrend        = true;      // Only trade WITH the higher-timeframe trend
+input ENUM_TIMEFRAMES InpTrendTF      = PERIOD_H1; // Higher timeframe to define the trend
+
 //--- Inputs: Risk & exits -------------------------------------------
 input double   InpRiskPerTradePct    = 1.0;       // Risk per trade (% of equity)
 input int      InpATRPeriod          = 14;        // ATR period
@@ -48,7 +55,7 @@ input double   InpMaxDailyLossPct    = 10.0;      // Stop trading after this dai
 //--- Inputs: "Let winners run" --------------------------------------
 input bool     InpUseBreakeven       = true;      // Move SL to entry once in profit
 input double   InpBreakevenAtrMult   = 1.0;       // Profit (in ATR) before breakeven
-input double   InpLockProfitAtrMult  = 0.3;       // Lock SL this much ATR ABOVE entry (0=just breakeven)
+input double   InpLockProfitAtrMult  = 0.0;       // Lock SL this much ATR above entry (0=plain breakeven AT entry)
 input bool     InpUseTrailing        = true;      // Trail the stop behind price
 input double   InpTrailAtrMult       = 2.0;       // Trail distance = ATR x this
 
@@ -73,6 +80,9 @@ int           hFastEMA = INVALID_HANDLE;
 int           hSlowEMA = INVALID_HANDLE;
 int           hRSI     = INVALID_HANDLE;
 int           hATR     = INVALID_HANDLE;
+int           hADX     = INVALID_HANDLE;
+int           hHTFFast = INVALID_HANDLE;
+int           hHTFSlow = INVALID_HANDLE;
 datetime      g_lastBarTime = 0;
 datetime      g_currentDay  = 0;
 double        g_dayStartBalance = 0.0;
@@ -93,9 +103,14 @@ int OnInit()
    hSlowEMA = iMA(_Symbol, _Period, InpSlowEMA, 0, MODE_EMA, PRICE_CLOSE);
    hRSI     = iRSI(_Symbol, _Period, InpRSIPeriod, PRICE_CLOSE);
    hATR     = iATR(_Symbol, _Period, InpATRPeriod);
+   hADX     = iADX(_Symbol, _Period, InpADXPeriod);
+   hHTFFast = iMA(_Symbol, InpTrendTF, InpFastEMA, 0, MODE_EMA, PRICE_CLOSE);
+   hHTFSlow = iMA(_Symbol, InpTrendTF, InpSlowEMA, 0, MODE_EMA, PRICE_CLOSE);
 
    if(hFastEMA == INVALID_HANDLE || hSlowEMA == INVALID_HANDLE ||
-      hRSI == INVALID_HANDLE || hATR == INVALID_HANDLE)
+      hRSI == INVALID_HANDLE || hATR == INVALID_HANDLE ||
+      hADX == INVALID_HANDLE || hHTFFast == INVALID_HANDLE ||
+      hHTFSlow == INVALID_HANDLE)
      {
       Print("ERROR: Failed to create indicator handles.");
       return(INIT_FAILED);
@@ -122,6 +137,9 @@ void OnDeinit(const int reason)
    if(hSlowEMA != INVALID_HANDLE) IndicatorRelease(hSlowEMA);
    if(hRSI     != INVALID_HANDLE) IndicatorRelease(hRSI);
    if(hATR     != INVALID_HANDLE) IndicatorRelease(hATR);
+   if(hADX     != INVALID_HANDLE) IndicatorRelease(hADX);
+   if(hHTFFast != INVALID_HANDLE) IndicatorRelease(hHTFFast);
+   if(hHTFSlow != INVALID_HANDLE) IndicatorRelease(hHTFSlow);
   }
 
 //+------------------------------------------------------------------+
@@ -162,6 +180,18 @@ void OnTick()
 
    if(direction == 0)
       return;
+
+   // --- Entry-quality filters: skip choppy / counter-trend setups ----
+   // 1) Require a real trend (ADX), not a sideways chop.
+   if(InpUseADX && CurrentADX() < InpADXMin)
+      return;
+   // 2) Only trade in the direction of the higher-timeframe trend.
+   if(InpUseHTFTrend)
+     {
+      int htf = HTFTrend();
+      if(htf == 0 || htf != direction)
+         return;
+     }
 
    // Space out added (pyramid) entries; a fresh signal is exempt.
    if(isPyramid && g_barsSinceEntry < InpSpacingBars)
@@ -439,6 +469,26 @@ double CurrentATR()
    if(CopyBuffer(hATR, 0, 1, 1, atr) < 1)
       return(0.0);
    return(atr[0]);
+  }
+
+// ADX main line on the last closed bar (trend strength, 0..100).
+double CurrentADX()
+  {
+   double adx[1];
+   if(CopyBuffer(hADX, 0, 1, 1, adx) < 1)
+      return(0.0);
+   return(adx[0]);
+  }
+
+// Higher-timeframe trend: +1 up, -1 down, 0 undecided.
+int HTFTrend()
+  {
+   double fast[1], slow[1];
+   if(CopyBuffer(hHTFFast, 0, 1, 1, fast) < 1) return(0);
+   if(CopyBuffer(hHTFSlow, 0, 1, 1, slow) < 1) return(0);
+   if(fast[0] > slow[0]) return(1);
+   if(fast[0] < slow[0]) return(-1);
+   return(0);
   }
 
 int CountMyPositions()
