@@ -46,7 +46,8 @@ input ENUM_TIMEFRAMES InpTrendTF      = PERIOD_M30; // Higher timeframe to defin
 //--- Inputs: Risk & exits -------------------------------------------
 input double   InpRiskPerTradePct    = 1.0;       // Risk per trade (% of equity)
 input int      InpATRPeriod          = 14;        // ATR period
-input double   InpSLAtrMult          = 1.5;       // Stop-loss = ATR x this
+input double   InpSLAtrMult          = 1.5;       // Stop-loss = ATR x this (used when fixed SL = 0)
+input double   InpFixedSLPoints      = 500;       // Fixed stop-loss in points (0 = use ATR instead)
 input double   InpTPAtrMult          = 4.0;       // Take-profit = ATR x this (wide = let it run)
 input double   InpMinLot             = 0.10;      // Minimum lot (grid trade size)
 input double   InpMaxLot             = 0.10;      // Maximum lot (grid trade size)
@@ -407,7 +408,10 @@ void OpenTrade(const int signal)
       return;
      }
 
-   double slDist = atr * InpSLAtrMult;
+   // Stop-loss: fixed points if set, otherwise ATR-based.
+   double slDist = (InpFixedSLPoints > 0.0)
+                   ? InpFixedSLPoints * SymbolInfoDouble(_Symbol, SYMBOL_POINT)
+                   : atr * InpSLAtrMult;
    double tpDist = atr * InpTPAtrMult;
 
    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
