@@ -39,7 +39,7 @@ input double   InpRSIOversold        = 30.0;      // RSI oversold (block sells b
 //--- Inputs: Entry-quality filters (avoid choppy, sideways markets) --
 input bool     InpUseADX             = true;      // Only enter when a real trend exists
 input int      InpADXPeriod          = 14;        // ADX period
-input double   InpADXMin             = 22.0;      // Min ADX to allow an entry (higher=stricter)
+input double   InpADXMin             = 18.0;      // Min ADX to allow an entry (higher=stricter)
 input bool     InpUseHTFTrend        = true;      // Only trade WITH the higher-timeframe trend
 input ENUM_TIMEFRAMES InpTrendTF      = PERIOD_H1; // Higher timeframe to define the trend
 
@@ -48,8 +48,8 @@ input double   InpRiskPerTradePct    = 1.0;       // Risk per trade (% of equity
 input int      InpATRPeriod          = 14;        // ATR period
 input double   InpSLAtrMult          = 1.5;       // Stop-loss = ATR x this
 input double   InpTPAtrMult          = 4.0;       // Take-profit = ATR x this (wide = let it run)
-input double   InpMinLot             = 0.01;      // Minimum lot
-input double   InpMaxLot             = 0.01;      // Maximum lot (pinned to min for small accounts)
+input double   InpMinLot             = 0.10;      // Minimum lot (DEMO test size; LOWER to 0.01 for a real $10 acct!)
+input double   InpMaxLot             = 0.10;      // Maximum lot (DEMO test size; LOWER to 0.01 for a real $10 acct!)
 input double   InpMaxDailyLossPct    = 10.0;      // Stop trading after this daily loss (%)
 
 //--- Inputs: "Let winners run" --------------------------------------
@@ -66,7 +66,7 @@ input bool     InpReverseOnOpposite  = false;     // Close opposite trades when 
 
 //--- Inputs: Close-in-profit (values in ACCOUNT ccy = CENTS on a cent acct)
 input bool     InpCloseInProfit      = true;      // Close a position once it shows profit
-input double   InpMinProfitMoney     = 5.0;       // Min profit to close one (e.g. 5 cents)
+input double   InpMinProfitMoney     = 20.0;      // Min profit to close one (higher = no churn, lets it breathe)
 input double   InpBasketProfitMoney  = 0.0;       // Close ALL when total profit >= this (0=off)
 
 //--- Inputs: General ------------------------------------------------
