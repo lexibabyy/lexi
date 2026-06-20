@@ -42,6 +42,9 @@ input bool   InpUseTrailing   = true;  // Built-in trailing stop
 input int    InpTrailStartPts = 150;   // Start trailing after this profit (points)
 input int    InpTrailDistPts  = 120;   // Keep stop this far behind price (points)
 input int    InpTrailStepPts  = 20;    // Minimum move to update the stop (points)
+input bool   InpUseEarlyBE    = true;  // Move SL above entry on a TINY profit (fewer SL hits)
+input int    InpBETriggerPts  = 30;    // Trigger breakeven after this profit (points)
+input int    InpBELockPts     = 5;     // Lock SL this many points above entry
 
 //--- Position / risk -----------------------------------------------
 input double InpRiskPct      = 0.25;
@@ -121,7 +124,7 @@ void OnDeinit(const int reason)
 void OnTick()
   {
    RollDay();
-   if(InpUseTrailing) ManageTrailing();   // trail open positions every tick
+   if(InpUseTrailing||InpUseEarlyBE) ManageTrailing();   // breakeven + trail every tick
    datetime bt=iTime(_Symbol,InpTF,0);
    if(bt==g_lastBar){ if(InpDashboard) Dashboard(); return; }
    g_lastBar=bt;
@@ -197,15 +200,28 @@ void ManageTrailing()
       if(PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
       long type=PositionGetInteger(POSITION_TYPE);
       double entry=PositionGetDouble(POSITION_PRICE_OPEN),sl=PositionGetDouble(POSITION_SL),tp=PositionGetDouble(POSITION_TP);
-      if(type==POSITION_TYPE_BUY && bid-entry>=start)
+      double point=SymbolInfoDouble(_Symbol,SYMBOL_POINT);
+      if(type==POSITION_TYPE_BUY)
         {
-         double n=NormalizeDouble(bid-dist,_Digits);
-         if(n>sl+step && n<bid) trade.PositionModify(t,n,tp);
+         double n=sl;
+         // Early breakeven: tiny profit -> lock SL just above entry.
+         if(InpUseEarlyBE && (bid-entry)>=InpBETriggerPts*point)
+            n=MathMax(n,entry+InpBELockPts*point);
+         // Trailing for larger moves.
+         if(InpUseTrailing && (bid-entry)>=start)
+            n=MathMax(n,bid-dist);
+         n=NormalizeDouble(n,_Digits);
+         if(n>sl && n<bid) trade.PositionModify(t,n,tp);
         }
-      else if(type==POSITION_TYPE_SELL && entry-ask>=start)
+      else if(type==POSITION_TYPE_SELL)
         {
-         double n=NormalizeDouble(ask+dist,_Digits);
-         if((sl==0.0||n<sl-step) && n>ask) trade.PositionModify(t,n,tp);
+         double n=sl;
+         if(InpUseEarlyBE && (entry-ask)>=InpBETriggerPts*point)
+            n=MathMin((sl==0.0?entry:n),entry-InpBELockPts*point);
+         if(InpUseTrailing && (entry-ask)>=start)
+            n=MathMin(n,ask+dist);
+         n=NormalizeDouble(n,_Digits);
+         if((sl==0.0||n<sl) && n>ask) trade.PositionModify(t,n,tp);
         }
      }
   }
