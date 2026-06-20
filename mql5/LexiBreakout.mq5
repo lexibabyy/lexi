@@ -124,7 +124,11 @@ void PlaceStop(int trend)
   {
    if(SpreadPct()>InpMaxSpreadPct){ g_status="spread too high"; return; }
    double atr=CurrentATR(); if(atr<=0.0){ g_status="no ATR"; return; }
-   double trig=InpTriggerATR*atr, slDist=InpSLatr*atr;
+   double point=SymbolInfoDouble(_Symbol,SYMBOL_POINT);
+   long   stops=SymbolInfoInteger(_Symbol,SYMBOL_TRADE_STOPS_LEVEL);
+   double minDist=(double)(stops+20)*point;          // broker minimum + buffer
+   double trig=MathMax(InpTriggerATR*atr,minDist);   // stop order distance
+   double slDist=MathMax(InpSLatr*atr,minDist);      // SL distance
    double ask=SymbolInfoDouble(_Symbol,SYMBOL_ASK),bid=SymbolInfoDouble(_Symbol,SYMBOL_BID);
    double lot=CalcLot(slDist); if(lot<=0.0){ g_status="lot=0"; return; }
 
