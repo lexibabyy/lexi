@@ -49,6 +49,8 @@ input double InpMaxRiskMult   = 2.0;
 input double InpMaxExposure   = 5.0; // % max total open risk
 input double InpSLAtrMult     = 2.0;
 input double InpTrailAtrMult  = 1.5;
+input double InpBEafterMoney  = 0.50; // Move SL to breakeven once a position profits this (account ccy)
+input int    InpBELockPoints  = 0;    // Lock this many points beyond entry at breakeven
 
 //--- Quick profit (optional) ---------------------------------------
 input bool   InpQuickClose       = false; // Bank a position at a small profit (off = let winners run)
@@ -246,9 +248,11 @@ void ManageExits()
       long type=PositionGetInteger(POSITION_TYPE);
       double entry=PositionGetDouble(POSITION_PRICE_OPEN);
       double sl=PositionGetDouble(POSITION_SL),tp=PositionGetDouble(POSITION_TP);
+      double prof=PositionGetDouble(POSITION_PROFIT);
       if(type==POSITION_TYPE_BUY)
         {
          double n=sl;
+         if(prof>=InpBEafterMoney) n=MathMax(n,entry+InpBELockPoints*_Point); // early breakeven
          if(bid-entry>atr) n=MathMax(n,entry);
          double tr=bid-atr*InpTrailAtrMult; if(tr>n) n=tr;
          if(n>sl && n<bid) trade.PositionModify(t,NormalizeDouble(n,_Digits),tp);
@@ -256,9 +260,10 @@ void ManageExits()
       else if(type==POSITION_TYPE_SELL)
         {
          double n=sl;
-         if(entry-ask>atr) n=(sl==0.0)?entry:MathMin(n,entry);
-         double tr=ask+atr*InpTrailAtrMult; if(sl==0.0||tr<n) n=tr;
-         if((sl==0.0||n<sl) && n>ask) trade.PositionModify(t,NormalizeDouble(n,_Digits),tp);
+         if(prof>=InpBEafterMoney) n=MathMin(n,entry-InpBELockPoints*_Point); // early breakeven
+         if(entry-ask>atr) n=MathMin(n,entry);
+         double tr=ask+atr*InpTrailAtrMult; if(tr<n) n=tr;
+         if(n<sl && n>ask) trade.PositionModify(t,NormalizeDouble(n,_Digits),tp);
         }
      }
    int held=NetSide();
