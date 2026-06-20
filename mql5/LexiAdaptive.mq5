@@ -39,6 +39,10 @@ input double InpAddStep   = 5.0;    // Confidence must rise this much to add aga
 input double InpBiasMargin= 10.0;   // Bull/Bear gap (>=) to set a directional bias
 input double InpExitConf  = 45.0;   // Held side below this -> exit it
 
+//--- Anti-chase (don't buy exhausted tops / sell exhausted bottoms) -
+input double InpMaxStretchATR = 1.2;  // Block entry if price is > this many ATR from EMA20
+input double InpRSIExhaust    = 76.0; // Block longs above this RSI / shorts below (100-this)
+
 //--- Position building / risk --------------------------------------
 input double InpBaseRiskPct  = 0.25; // % risk per entry (scaled up by confidence)
 input double InpMaxRiskMult   = 2.0;
@@ -197,6 +201,8 @@ bool OpenEntry(int side,double conf)
   {
    if(SpreadPct()>InpMaxSpreadPct) return false;
    if(MarginLevel()<InpMinMarginLevel && PositionsExistAny()) return false;
+   if(Overextended(side))
+     { g_status="wait pullback"; g_noTradeWhy=StringFormat("%s blocked: exhausted/overextended",(side>0?"BUY":"SELL")); return false; }
    double atr=CurrentATR(); if(atr<=0.0) return false;
    double price=(side>0)?SymbolInfoDouble(_Symbol,SYMBOL_ASK):SymbolInfoDouble(_Symbol,SYMBOL_BID);
    double slDist=atr*InpSLAtrMult;
@@ -368,6 +374,26 @@ bool AtrExpanding()
    if(CopyBuffer(hATR,0,0,25,a)<25) return false;
    double avg=0; for(int i=1;i<=20;i++) avg+=a[i]; avg/=20.0;
    return a[1]>avg;
+  }
+
+// Anti-chase: don't enter when price is stretched far from EMA20 or RSI
+// is exhausted -> wait for a pullback instead of buying the top.
+bool Overextended(int side)
+  {
+   double atr=CurrentATR(); if(atr<=0.0) return false;
+   double ema=EMA(hE1), r=RSIval();
+   double price=(side>0)?SymbolInfoDouble(_Symbol,SYMBOL_ASK):SymbolInfoDouble(_Symbol,SYMBOL_BID);
+   if(side>0)
+     {
+      if(price > ema + InpMaxStretchATR*atr) return true;   // too far above EMA20
+      if(r >= InpRSIExhaust) return true;                   // RSI exhausted high
+     }
+   else
+     {
+      if(price < ema - InpMaxStretchATR*atr) return true;
+      if(r <= 100.0-InpRSIExhaust) return true;
+     }
+   return false;
   }
 
 //+==================================================================+
