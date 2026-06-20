@@ -51,6 +51,7 @@ input bool   InpFlipOpposite = true;
 //--- Daily limits ---------------------------------------------------
 input double InpMaxDailyDD     = 5.0;   // % daily drawdown -> stop for day
 input double InpDailyProfitTgt = 0.0;   // Stop for day after this profit (acct ccy; 0=off)
+input double InpDailyTargetPct = 0.0;   // OR stop after this % of day-start equity (0=off; auto-scales)
 
 //--- Spread filter --------------------------------------------------
 input double InpMaxSpreadPct = 0.05;
@@ -216,6 +217,7 @@ bool CanTrade()
    double dayPnl=eq-g_dayStartEq;
    if(g_dayStartEq>0 && (-dayPnl)/g_dayStartEq*100.0>=InpMaxDailyDD) g_haltDay=true;
    if(InpDailyProfitTgt>0.0 && dayPnl>=InpDailyProfitTgt) g_haltDay=true;
+   if(InpDailyTargetPct>0.0 && g_dayStartEq>0 && dayPnl>=g_dayStartEq*InpDailyTargetPct/100.0) g_haltDay=true;
    if(g_haltDay){ g_status="daily target/DD reached"; return false; }
    if(IsHoliday()){ g_status="holiday: no trading"; return false; }
    if(!InSession()){ g_status="outside session"; return false; }
