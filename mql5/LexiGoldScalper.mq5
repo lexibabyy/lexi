@@ -22,6 +22,8 @@ enum ENUM_DIR { DIR_BOTH=0, DIR_BUY_ONLY=1, DIR_SELL_ONLY=2 };
 //--- Core -----------------------------------------------------------
 input ENUM_TIMEFRAMES InpTF = PERIOD_M1;
 input ENUM_DIR InpDirection = DIR_BOTH;     // Allowed trade direction
+input bool   InpUseHTFTrend = false;        // Confirm with higher timeframe (filters retracements)
+input ENUM_TIMEFRAMES InpHTF = PERIOD_M15;  // Higher timeframe for confirmation
 input int    InpEmaFast   = 20;
 input int    InpEmaSlow   = 50;
 input int    InpRSIPeriod = 14;
@@ -87,6 +89,7 @@ input bool   InpDashboard = true;
 //--- Globals --------------------------------------------------------
 CTrade   trade;
 int      hEf=INVALID_HANDLE,hEs=INVALID_HANDLE,hRSI=INVALID_HANDLE,hATR=INVALID_HANDLE;
+int      hHTFf=INVALID_HANDLE,hHTFs=INVALID_HANDLE;
 datetime g_lastBar=0,g_day=0;
 double   g_dayStartEq=0;
 int      g_tradesToday=0;
@@ -100,7 +103,9 @@ int OnInit()
    hEs =iMA(_Symbol,InpTF,InpEmaSlow,0,MODE_EMA,PRICE_CLOSE);
    hRSI=iRSI(_Symbol,InpTF,InpRSIPeriod,PRICE_CLOSE);
    hATR=iATR(_Symbol,InpTF,InpATRPeriod);
-   if(hEf==INVALID_HANDLE||hEs==INVALID_HANDLE||hRSI==INVALID_HANDLE||hATR==INVALID_HANDLE)
+   hHTFf=iMA(_Symbol,InpHTF,InpEmaFast,0,MODE_EMA,PRICE_CLOSE);
+   hHTFs=iMA(_Symbol,InpHTF,InpEmaSlow,0,MODE_EMA,PRICE_CLOSE);
+   if(hEf==INVALID_HANDLE||hEs==INVALID_HANDLE||hRSI==INVALID_HANDLE||hATR==INVALID_HANDLE||hHTFf==INVALID_HANDLE||hHTFs==INVALID_HANDLE)
      { Print("ERROR: handles failed"); return(INIT_FAILED); }
    trade.SetExpertMagicNumber(InpMagic);
    trade.SetDeviationInPoints(InpSlippagePts);
@@ -117,7 +122,19 @@ void OnDeinit(const int reason)
    if(hEs!=INVALID_HANDLE) IndicatorRelease(hEs);
    if(hRSI!=INVALID_HANDLE) IndicatorRelease(hRSI);
    if(hATR!=INVALID_HANDLE) IndicatorRelease(hATR);
+   if(hHTFf!=INVALID_HANDLE) IndicatorRelease(hHTFf);
+   if(hHTFs!=INVALID_HANDLE) IndicatorRelease(hHTFs);
    Comment("");
+  }
+
+int HTFTrend()
+  {
+   double f[1],s[1];
+   if(CopyBuffer(hHTFf,0,1,1,f)<1) return 0;
+   if(CopyBuffer(hHTFs,0,1,1,s)<1) return 0;
+   if(f[0]>s[0]) return 1;
+   if(f[0]<s[0]) return -1;
+   return 0;
   }
 
 //+------------------------------------------------------------------+
@@ -152,8 +169,17 @@ int Signal()
   {
    double ef=EMA(hEf),es=EMA(hEs),r=RSIval();
    bool volOK=VolumeOK();
-   if(ef>es && r>InpRSIBuy && MomentumBull() && volOK){ g_status="BUY signal"; return 1; }
-   if(ef<es && r<InpRSISell && MomentumBear() && volOK){ g_status="SELL signal"; return -1; }
+   int htf=InpUseHTFTrend?HTFTrend():0;
+   if(ef>es && r>InpRSIBuy && MomentumBull() && volOK)
+     {
+      if(InpUseHTFTrend && htf<1){ g_status="BUY blocked: HTF not up (retracement?)"; return 0; }
+      g_status="BUY signal"; return 1;
+     }
+   if(ef<es && r<InpRSISell && MomentumBear() && volOK)
+     {
+      if(InpUseHTFTrend && htf>-1){ g_status="SELL blocked: HTF not down (retracement?)"; return 0; }
+      g_status="SELL signal"; return -1;
+     }
    g_status="no signal"; return 0;
   }
 bool MomentumBull(){ double o=iOpen(_Symbol,InpTF,1),c=iClose(_Symbol,InpTF,1),h=iHigh(_Symbol,InpTF,1),l=iLow(_Symbol,InpTF,1); double rng=h-l; return rng>0&&c>o&&(c-o)>=InpBodyFrac*rng; }
