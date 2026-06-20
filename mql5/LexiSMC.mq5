@@ -56,6 +56,7 @@ input double InpTPfraction    = 0.25; // Fraction closed at each TP
 //--- General --------------------------------------------------------
 input long   InpMagic        = 870125;// Unique EA id
 input int    InpSlippagePts  = 50;    // Max slippage (points)
+input bool   InpVerbose      = true;  // Print analysis to the Experts log each bar
 
 //--- Globals --------------------------------------------------------
 CTrade   trade;
@@ -136,9 +137,33 @@ void OnTick()
    UpdateRiskMarks();
 
    if(g_side == 0)
+     {
+      if(InpVerbose) LogDiagnostics();
       TryEnter();
+     }
    else
       TryScaleIn();
+  }
+
+//+------------------------------------------------------------------+
+//| Per-bar diagnostics so you can see WHY it is or isn't trading     |
+//+------------------------------------------------------------------+
+void LogDiagnostics()
+  {
+   int trend = HtfTrend();
+   string tname = (trend>0 ? "UP" : trend<0 ? "DOWN" : "NONE");
+   double conf = (trend!=0) ? Confidence(trend) : 0.0;
+
+   bool sweep = (trend>0) ? SweepBullish() : (trend<0 ? SweepBearish() : false);
+   bool div   = (trend>0) ? DivBullish()   : (trend<0 ? DivBearish()   : false);
+   bool choch = (trend>0) ? ChochBullish() : (trend<0 ? ChochBearish() : false);
+   bool bos   = (trend>0) ? BosBullish()   : (trend<0 ? BosBearish()   : false);
+
+   PrintFormat("SMC scan: trend=%s conf=%.0f/%.0f | sweep=%d div=%d choch=%d bos=%d vol=%d | volOK=%s spread=%d canOpen=%s",
+               tname, conf, InpMinConfidence,
+               (int)sweep, (int)div, (int)choch, (int)bos, (int)VolumeOK(),
+               (VolatilityOK()?"yes":"no"), SpreadPoints(),
+               (CanOpenNewIdea()?"yes":"no"));
   }
 
 //+------------------------------------------------------------------+
