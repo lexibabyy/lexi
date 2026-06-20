@@ -34,8 +34,8 @@ input double InpVolMult   = 1.1;
 input double InpBodyFrac  = 0.30;
 
 //--- Exits ----------------------------------------------------------
-input double InpTPmult    = 0.6;    // Auto Take profit = ATR x this
-input double InpSLmult    = 1.0;    // Auto Stop loss   = ATR x this
+input double InpTPmult    = 0.8;    // Auto Take profit = ATR x this
+input double InpSLmult    = 1.2;    // Auto Stop loss   = ATR x this
 input bool   InpUseFixedTP    = false; // Use fixed TP in points (else automated ATR)
 input int    InpFixedTPpoints = 200;   // Fixed take-profit (points)
 input bool   InpUseFixedSL    = false; // Use fixed SL in points (else automated ATR)
