@@ -45,6 +45,8 @@ input int    InpTrailStepPts  = 20;    // Minimum move to update the stop (point
 
 //--- Position / risk -----------------------------------------------
 input double InpRiskPct      = 0.25;
+input bool   InpUseFixedLot  = false;  // Use a fixed lot instead of % risk sizing
+input double InpFixedLot      = 0.01;  // Fixed lot size (you control it)
 input int    InpMaxPositions = 3;
 input bool   InpFlipOpposite = true;
 
@@ -319,12 +321,18 @@ void CloseSide(int side)
   }
 double CalcLot(double slDist)
   {
-   double eq=AccountInfoDouble(ACCOUNT_EQUITY),riskMoney=eq*(InpRiskPct/100.0);
-   double tv=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE),ts=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
-   if(tv<=0||ts<=0||slDist<=0) return 0.0;
-   double lossPerLot=(slDist/ts)*tv; if(lossPerLot<=0) return 0.0;
-   double lot=riskMoney/lossPerLot;
    double step=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP),vmin=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MIN),vmax=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MAX);
+   double lot;
+   if(InpUseFixedLot)
+      lot=InpFixedLot;                       // you set it directly
+   else
+     {
+      double eq=AccountInfoDouble(ACCOUNT_EQUITY),riskMoney=eq*(InpRiskPct/100.0);
+      double tv=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE),ts=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
+      if(tv<=0||ts<=0||slDist<=0) return 0.0;
+      double lossPerLot=(slDist/ts)*tv; if(lossPerLot<=0) return 0.0;
+      lot=riskMoney/lossPerLot;
+     }
    if(step>0) lot=MathFloor(lot/step)*step;
    lot=MathMax(lot,vmin); lot=MathMin(lot,vmax);
    return NormalizeDouble(lot,2);
