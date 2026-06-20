@@ -58,7 +58,8 @@ input double InpEmergencyDD   = 15.0;  // % from peak -> close all & halt
 input int    InpMaxConsecLoss = 5;     // Pause after N consecutive losing deals
 
 //--- Failsafe -------------------------------------------------------
-input int    InpMaxSpreadPts  = 300;   // Skip new trades above this spread
+input double InpMaxSpreadPct  = 0.06;  // Skip new trades if spread > this % of price
+input int    InpMaxSpreadPts  = 300;   // (reference only; pct gate is used)
 input double InpMinMarginLevel= 200.0; // Skip new trades below this margin %
 
 //--- General --------------------------------------------------------
@@ -205,7 +206,7 @@ void EngineStep(int bias)
 
 bool OpenEntry(int side, double conf)
   {
-   if(SpreadPoints() > InpMaxSpreadPts) return false;
+   if(SpreadPct() > InpMaxSpreadPct) return false;
    if(MarginLevel() < InpMinMarginLevel && PositionsExistAny()) return false;
 
    double atr=CurrentATR();
@@ -423,6 +424,7 @@ double RSIval(){ double b[1]; if(CopyBuffer(hRSI,0,1,1,b)<1) return 50.0; return
 double CurrentATR(){ double b[1]; if(CopyBuffer(hATR,0,1,1,b)<1) return 0.0; return b[0]; }
 bool   VolatilityOK(){ double a=CurrentATR(),p=SymbolInfoDouble(_Symbol,SYMBOL_BID); if(a<=0||p<=0) return false; double x=a/p; return (x>=0.0005 && x<=0.06); }
 int    SpreadPoints(){ return (int)SymbolInfoInteger(_Symbol,SYMBOL_SPREAD); }
+double SpreadPct(){ double a=SymbolInfoDouble(_Symbol,SYMBOL_ASK),b=SymbolInfoDouble(_Symbol,SYMBOL_BID); if(b<=0) return 0.0; return (a-b)/b*100.0; }
 double MarginLevel(){ double m=AccountInfoDouble(ACCOUNT_MARGIN); if(m<=0.0) return 1e9; return AccountInfoDouble(ACCOUNT_MARGIN_LEVEL); }
 
 bool PositionsExistAny(){ return NetSide()!=0; }
@@ -536,7 +538,7 @@ bool CanTrade()
    if(g_haltWeek){ g_status="weekly DD halt"; return false; }
    if(g_haltDay){ g_status="daily DD halt"; return false; }
    if(g_consec>=InpMaxConsecLoss){ g_status="loss-streak pause"; return false; }
-   if(SpreadPoints()>InpMaxSpreadPts){ g_status="spread too high"; return false; }
+   if(SpreadPct()>InpMaxSpreadPct){ g_status="spread too high"; return false; }
    return true;
   }
 
@@ -582,6 +584,8 @@ void UpdateDashboard()
    s+=StringFormat("Risk Exposure      : %.2f%% / %.0f%%\n", ExposurePct(), InpMaxExposure);
    s+=StringFormat("Daily Drawdown     : %.2f%% / %.0f%%\n", ddDay, InpMaxDailyDD);
    s+=StringFormat("Consec. Losses     : %d / %d\n", g_consec, InpMaxConsecLoss);
+   s+=StringFormat("Spread             : %.3f%% / %.3f%%\n", SpreadPct(), InpMaxSpreadPct);
+   s+=StringFormat("Entry needs conf   : >= %.0f (margin %.0f)\n", InpEntryConfidence, InpFlipMargin);
    s+=StringFormat("EA Status          : %s\n", g_status);
    s+="=============================================";
    Comment(s);
