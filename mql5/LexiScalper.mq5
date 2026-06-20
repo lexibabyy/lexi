@@ -30,8 +30,8 @@ input double InpVolMult   = 1.1;     // Volume vs average to count as "above ave
 input double InpBodyFrac  = 0.30;    // Momentum candle body >= this of the range
 
 //--- Exits ----------------------------------------------------------
-input double InpTPmult    = 0.25;    // Take profit = ATR x this (0.2-0.3)
-input double InpSLmult    = 0.50;    // Stop loss   = ATR x this (0.4-0.6)
+input double InpTPmult    = 1.50;    // Take profit = ATR x this (BTC-tuned to clear wide spread)
+input double InpSLmult    = 2.50;    // Stop loss   = ATR x this
 
 //--- Position / risk -----------------------------------------------
 input double InpRiskPct   = 0.25;    // % risk per trade
