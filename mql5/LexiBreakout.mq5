@@ -30,6 +30,11 @@ input double InpSLatr        = 1.20; // Stop-loss distance (x ATR)
 input int    InpMaxPositions = 10;   // Max stacked positions
 input bool   InpCloseOnFlip  = true; // Close opposite side when trend flips
 
+//--- Take profit ----------------------------------------------------
+input bool   InpUseQuickTP    = true; // Bank each position as soon as it shows a small profit
+input double InpQuickTPmoney  = 1.0;  // Per-position profit to bank (account ccy)
+input double InpBasketTPmoney = 0.0;  // Close ALL when total profit >= this (0=off)
+
 //--- Position size --------------------------------------------------
 input double InpRiskPct     = 0.25;
 input bool   InpUseFixedLot = false;
@@ -89,6 +94,7 @@ void OnDeinit(const int reason)
 void OnTick()
   {
    RollDay();
+   QuickTP();                          // bank small profits immediately
    ManageProtection();                 // BE + trailing on every tick
 
    datetime bt=iTime(_Symbol,InpTF,0);
@@ -135,6 +141,32 @@ void PlaceStop(int trend)
       double sl=NormalizeDouble(price+slDist,_Digits);
       if(trade.SellStop(lot,price,_Symbol,sl,0.0,ORDER_TIME_GTC,0,"LexiBreakout"))
          g_status="sell-stop placed (downtrend)";
+     }
+  }
+
+//+==================================================================+
+//|  TAKE PROFIT (per-position quick TP + basket TP)                 |
+//+==================================================================+
+void QuickTP()
+  {
+   // Basket: close everything once combined profit hits the target.
+   if(InpBasketTPmoney>0.0 && BasketProfit()>=InpBasketTPmoney)
+     {
+      CloseSide(1); CloseSide(-1); DeleteMyPending();
+      g_status="basket TP banked";
+      return;
+     }
+   // Per-position: bank each as soon as it shows the small profit.
+   if(InpUseQuickTP && InpQuickTPmoney>0.0)
+     {
+      for(int i=PositionsTotal()-1;i>=0;i--)
+        {
+         ulong t=PositionGetTicket(i);
+         if(!PositionSelectByTicket(t)) continue;
+         if(PositionGetInteger(POSITION_MAGIC)!=InpMagic) continue;
+         if(PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
+         if(PositionGetDouble(POSITION_PROFIT)>=InpQuickTPmoney) trade.PositionClose(t);
+        }
      }
   }
 
