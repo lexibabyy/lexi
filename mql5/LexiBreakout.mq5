@@ -26,6 +26,7 @@ input int    InpATRPeriod = 14;
 
 //--- Breakout / stacking -------------------------------------------
 input double InpTriggerATR  = 0.30; // Stop order this far from price (x ATR)
+input double InpMinDistPct  = 0.05; // Min distance as % of price (safety for fast symbols like BTC)
 input double InpSLatr        = 1.20; // Stop-loss distance (x ATR)
 input int    InpMaxPositions = 10;   // Max stacked positions
 input bool   InpCloseOnFlip  = true; // Close opposite side when trend flips
@@ -124,12 +125,14 @@ void PlaceStop(int trend)
   {
    if(SpreadPct()>InpMaxSpreadPct){ g_status="spread too high"; return; }
    double atr=CurrentATR(); if(atr<=0.0){ g_status="no ATR"; return; }
+   double ask=SymbolInfoDouble(_Symbol,SYMBOL_ASK),bid=SymbolInfoDouble(_Symbol,SYMBOL_BID);
    double point=SymbolInfoDouble(_Symbol,SYMBOL_POINT);
    long   stops=SymbolInfoInteger(_Symbol,SYMBOL_TRADE_STOPS_LEVEL);
-   double minDist=(double)(stops+20)*point;          // broker minimum + buffer
+   // Minimum safe distance: broker stops-level, OR a % of price (covers
+   // fast instruments like BTC where a tiny trigger gets crossed instantly).
+   double minDist=MathMax((double)(stops+20)*point, ask*InpMinDistPct/100.0);
    double trig=MathMax(InpTriggerATR*atr,minDist);   // stop order distance
    double slDist=MathMax(InpSLatr*atr,minDist);      // SL distance
-   double ask=SymbolInfoDouble(_Symbol,SYMBOL_ASK),bid=SymbolInfoDouble(_Symbol,SYMBOL_BID);
    double lot=CalcLot(slDist); if(lot<=0.0){ g_status="lot=0"; return; }
 
    if(trend>0)
