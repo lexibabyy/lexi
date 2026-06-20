@@ -32,8 +32,16 @@ input double InpVolMult   = 1.1;
 input double InpBodyFrac  = 0.30;
 
 //--- Exits ----------------------------------------------------------
-input double InpTPmult    = 0.6;    // Take profit = ATR x this
-input double InpSLmult    = 1.0;    // Stop loss   = ATR x this
+input double InpTPmult    = 0.6;    // Auto Take profit = ATR x this
+input double InpSLmult    = 1.0;    // Auto Stop loss   = ATR x this
+input bool   InpUseFixedTP    = false; // Use fixed TP in points (else automated ATR)
+input int    InpFixedTPpoints = 200;   // Fixed take-profit (points)
+input bool   InpUseFixedSL    = false; // Use fixed SL in points (else automated ATR)
+input int    InpFixedSLpoints = 400;   // Fixed stop-loss (points)
+input bool   InpUseTrailing   = true;  // Built-in trailing stop
+input int    InpTrailStartPts = 150;   // Start trailing after this profit (points)
+input int    InpTrailDistPts  = 120;   // Keep stop this far behind price (points)
+input int    InpTrailStepPts  = 20;    // Minimum move to update the stop (points)
 
 //--- Position / risk -----------------------------------------------
 input double InpRiskPct      = 0.25;
@@ -110,6 +118,7 @@ void OnDeinit(const int reason)
 void OnTick()
   {
    RollDay();
+   if(InpUseTrailing) ManageTrailing();   // trail open positions every tick
    datetime bt=iTime(_Symbol,InpTF,0);
    if(bt==g_lastBar){ if(InpDashboard) Dashboard(); return; }
    g_lastBar=bt;
@@ -151,7 +160,9 @@ bool VolumeOK(){ long v[]; ArraySetAsSeries(v,true); if(CopyTickVolume(_Symbol,I
 void OpenTrade(int side)
   {
    double atr=CurrentATR(); if(atr<=0.0){ g_status="no ATR"; return; }
-   double tpDist=atr*InpTPmult, slDist=atr*InpSLmult;
+   double point=SymbolInfoDouble(_Symbol,SYMBOL_POINT);
+   double tpDist=InpUseFixedTP?InpFixedTPpoints*point:atr*InpTPmult;
+   double slDist=InpUseFixedSL?InpFixedSLpoints*point:atr*InpSLmult;
    double ask=SymbolInfoDouble(_Symbol,SYMBOL_ASK),bid=SymbolInfoDouble(_Symbol,SYMBOL_BID);
    double spread=ask-bid;
    if(spread>=InpSpreadTPratio*tpDist){ g_status="spread >= TP: skip"; return; }
@@ -165,6 +176,35 @@ void OpenTrade(int side)
                    :trade.Sell(lot,_Symbol,price,sl,tp,"LexiGoldScalper");
    if(ok){ g_tradesToday++; g_status=(side>0?"opened BUY":"opened SELL"); }
    else PrintFormat("order failed %d %s",trade.ResultRetcode(),trade.ResultRetcodeDescription());
+  }
+
+//+==================================================================+
+//|  TRAILING STOP                                                   |
+//+==================================================================+
+void ManageTrailing()
+  {
+   double point=SymbolInfoDouble(_Symbol,SYMBOL_POINT);
+   double start=InpTrailStartPts*point,dist=InpTrailDistPts*point,step=InpTrailStepPts*point;
+   double bid=SymbolInfoDouble(_Symbol,SYMBOL_BID),ask=SymbolInfoDouble(_Symbol,SYMBOL_ASK);
+   for(int i=PositionsTotal()-1;i>=0;i--)
+     {
+      ulong t=PositionGetTicket(i);
+      if(!PositionSelectByTicket(t)) continue;
+      if(PositionGetInteger(POSITION_MAGIC)!=InpMagic) continue;
+      if(PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
+      long type=PositionGetInteger(POSITION_TYPE);
+      double entry=PositionGetDouble(POSITION_PRICE_OPEN),sl=PositionGetDouble(POSITION_SL),tp=PositionGetDouble(POSITION_TP);
+      if(type==POSITION_TYPE_BUY && bid-entry>=start)
+        {
+         double n=NormalizeDouble(bid-dist,_Digits);
+         if(n>sl+step && n<bid) trade.PositionModify(t,n,tp);
+        }
+      else if(type==POSITION_TYPE_SELL && entry-ask>=start)
+        {
+         double n=NormalizeDouble(ask+dist,_Digits);
+         if((sl==0.0||n<sl-step) && n>ask) trade.PositionModify(t,n,tp);
+        }
+     }
   }
 
 //+==================================================================+
