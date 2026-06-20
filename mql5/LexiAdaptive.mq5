@@ -36,7 +36,7 @@ input double InpBodyFrac     = 0.40;  // Momentum candle: body must be >= this o
 input double InpOpenConf  = 60.0;   // Open first (exploratory) entry at/above this
 input double InpAddConf   = 75.0;   // Allow adds at/above this
 input double InpAddStep   = 5.0;    // Confidence must rise this much to add again
-input double InpBiasMargin= 15.0;   // Bull/Bear gap to set a directional bias
+input double InpBiasMargin= 10.0;   // Bull/Bear gap (>=) to set a directional bias
 input double InpExitConf  = 45.0;   // Held side below this -> exit it
 
 //--- Position building / risk --------------------------------------
@@ -55,6 +55,7 @@ input double InpMaxDailyDD    = 5.0;
 input double InpMaxWeeklyDD   = 10.0;
 input double InpEmergencyDD   = 15.0;
 input int    InpMaxConsecLoss = 5;
+input int    InpPauseMinutes  = 60;   // Auto-resume this long after a loss-streak pause
 input double InpMaxSpreadPct  = 0.06;  // % of price
 input double InpMinMarginLevel= 200.0;
 
@@ -73,6 +74,8 @@ bool     g_emergency=false,g_haltDay=false,g_haltWeek=false;
 int      g_side=0;
 double   g_lastAddConf=0.0,g_bull=0.0,g_bear=0.0;
 string   g_status="init";
+datetime g_pauseUntil=0;
+string   g_bullWhy="",g_bearWhy="",g_biasWhy="",g_noTradeWhy="",g_entryWhy="",g_exitWhy="";
 
 //+------------------------------------------------------------------+
 int OnInit()
@@ -146,14 +149,26 @@ void EngineStep(int bias)
 
    // Bias reversal: opposite side now favoured -> drop the held side.
    if(held!=0 && bias!=0 && bias!=held)
-     { CloseSide(held); g_side=0; held=0; }
+     {
+      g_exitWhy=StringFormat("bias flipped to %s",(bias>0?"BUY":"SELL"));
+      PrintFormat("FLIP: closing %s | %s",(held>0?"LONG":"SHORT"),g_biasWhy);
+      CloseSide(held); g_side=0; held=0;
+     }
 
-   if(bias==0 || conf<InpOpenConf){ g_status=(held!=0?"managing":"flat/waiting"); return; }
+   if(bias==0){ g_status="NEUTRAL"; g_noTradeWhy=g_biasWhy; return; }
+   if(conf<InpOpenConf)
+     {
+      g_status=(held!=0?"managing":"waiting");
+      g_noTradeWhy=StringFormat("%s conf %.0f < open %.0f",(bias>0?"bull":"bear"),conf,InpOpenConf);
+      return;
+     }
 
    // First exploratory entry.
    if(held==0)
      {
-      if(OpenEntry(bias,conf)){ g_side=bias; g_lastAddConf=conf; g_status="opened (explore)"; }
+      g_entryWhy=StringFormat("%s explore conf=%.0f | %s",(bias>0?"BUY":"SELL"),conf,(bias>0?g_bullWhy:g_bearWhy));
+      if(OpenEntry(bias,conf))
+        { g_side=bias; g_lastAddConf=conf; g_status="opened (explore)"; PrintFormat("ENTER %s",g_entryWhy); }
       return;
      }
 
@@ -166,9 +181,15 @@ void EngineStep(int bias)
       bool room     = ExposurePct()<InpMaxExposure;
       if(rising && inProfit && momentum && room)
         {
-         if(OpenEntry(bias,conf)){ g_lastAddConf=conf; g_status="added (scaling)"; }
+         g_entryWhy=StringFormat("%s add conf=%.0f (was %.0f)",(bias>0?"BUY":"SELL"),conf,g_lastAddConf);
+         if(OpenEntry(bias,conf)){ g_lastAddConf=conf; g_status="added (scaling)"; PrintFormat("ADD %s",g_entryWhy); }
         }
-      else g_status="holding winner";
+      else
+        {
+         g_status="holding winner";
+         g_noTradeWhy=StringFormat("no add: rising=%d inProfit=%d momentum=%d room=%d",
+                       (int)rising,(int)inProfit,(int)momentum,(int)room);
+        }
      }
   }
 
@@ -235,8 +256,10 @@ void ManageExits()
         }
      }
    int held=NetSide();
-   if(held>0 && (g_bull<InpExitConf || g_bear>g_bull+InpBiasMargin)) CloseSide(1);
-   if(held<0 && (g_bear<InpExitConf || g_bull>g_bear+InpBiasMargin)) CloseSide(-1);
+   if(held>0 && (g_bull<InpExitConf || g_bear>=g_bull+InpBiasMargin))
+     { g_exitWhy=StringFormat("LONG exit: bull %.0f / bear %.0f",g_bull,g_bear); Print(g_exitWhy); CloseSide(1); }
+   if(held<0 && (g_bear<InpExitConf || g_bull>=g_bear+InpBiasMargin))
+     { g_exitWhy=StringFormat("SHORT exit: bull %.0f / bear %.0f",g_bull,g_bear); Print(g_exitWhy); CloseSide(-1); }
   }
 
 //+==================================================================+
@@ -244,41 +267,46 @@ void ManageExits()
 //+==================================================================+
 double BullConfidence()
   {
-   double e1=EMA(hE1),e2=EMA(hE2),e3=EMA(hE3),r=RSIval(),s=0.0;
-   if(e1>e2) s+=15;
-   if(e2>e3) s+=15;
-   if(HigherHigh()) s+=10;
-   if(HigherLow())  s+=10;
-   if(VolumeOK())   s+=15;
-   if(r>55)         s+=10;
-   if(AtrExpanding())s+=10;
-   if(MomentumBull())s+=15;
-   if(BosBullish())  s+=5;   // booster
-   if(ChochBullish())s+=5;   // booster
+   double e1=EMA(hE1),e2=EMA(hE2),e3=EMA(hE3),r=RSIval(),s=0.0; g_bullWhy="";
+   if(e1>e2){ s+=15; g_bullWhy+="EMA20>50(15) "; }
+   if(e2>e3){ s+=15; g_bullWhy+="EMA50>200(15) "; }
+   if(HigherHigh()){ s+=10; g_bullWhy+="HH(10) "; }
+   if(HigherLow()){  s+=10; g_bullWhy+="HL(10) "; }
+   if(VolumeOK()){   s+=15; g_bullWhy+="Vol(15) "; }
+   if(r>55){         s+=10; g_bullWhy+="RSI>55(10) "; }
+   if(AtrExpanding()){s+=10; g_bullWhy+="ATRexp(10) "; }
+   if(MomentumBull()){s+=15; g_bullWhy+="BullCandle(15) "; }
+   if(BosBullish()){  s+=5;  g_bullWhy+="+BOS(5) "; }
+   if(ChochBullish()){s+=5;  g_bullWhy+="+CHoCH(5) "; }
+   if(g_bullWhy=="") g_bullWhy="none";
    return MathMin(100.0,s);
   }
 
 double BearConfidence()
   {
-   double e1=EMA(hE1),e2=EMA(hE2),e3=EMA(hE3),r=RSIval(),s=0.0;
-   if(e1<e2) s+=15;
-   if(e2<e3) s+=15;
-   if(LowerHigh()) s+=10;
-   if(LowerLow())  s+=10;
-   if(VolumeOK())  s+=15;
-   if(r<45)        s+=10;
-   if(AtrExpanding())s+=10;
-   if(MomentumBear())s+=15;
-   if(BosBearish())  s+=5;
-   if(ChochBearish())s+=5;
+   double e1=EMA(hE1),e2=EMA(hE2),e3=EMA(hE3),r=RSIval(),s=0.0; g_bearWhy="";
+   if(e1<e2){ s+=15; g_bearWhy+="EMA20<50(15) "; }
+   if(e2<e3){ s+=15; g_bearWhy+="EMA50<200(15) "; }
+   if(LowerHigh()){ s+=10; g_bearWhy+="LH(10) "; }
+   if(LowerLow()){  s+=10; g_bearWhy+="LL(10) "; }
+   if(VolumeOK()){  s+=15; g_bearWhy+="Vol(15) "; }
+   if(r<45){        s+=10; g_bearWhy+="RSI<45(10) "; }
+   if(AtrExpanding()){s+=10; g_bearWhy+="ATRexp(10) "; }
+   if(MomentumBear()){s+=15; g_bearWhy+="BearCandle(15) "; }
+   if(BosBearish()){  s+=5;  g_bearWhy+="+BOS(5) "; }
+   if(ChochBearish()){s+=5;  g_bearWhy+="+CHoCH(5) "; }
+   if(g_bearWhy=="") g_bearWhy="none";
    return MathMin(100.0,s);
   }
 
+// Symmetric: no built-in preference for either side. Gap compared with >=.
 int Bias()
   {
-   if(g_bull-g_bear>InpBiasMargin) return 1;
-   if(g_bear-g_bull>InpBiasMargin) return -1;
-   return 0;   // FLAT only when nearly equal
+   double diff=g_bull-g_bear;
+   if(diff>=InpBiasMargin){ g_biasWhy=StringFormat("Bull %.0f - Bear %.0f = %.0f >= %.0f",g_bull,g_bear,diff,InpBiasMargin); return 1; }
+   if(-diff>=InpBiasMargin){ g_biasWhy=StringFormat("Bear %.0f - Bull %.0f = %.0f >= %.0f",g_bear,g_bull,-diff,InpBiasMargin); return -1; }
+   g_biasWhy=StringFormat("gap %.0f < %.0f -> NEUTRAL",MathAbs(diff),InpBiasMargin);
+   return 0;
   }
 
 //+==================================================================+
@@ -442,11 +470,26 @@ void CloseAll(){ CloseSide(1); CloseSide(-1); g_side=0; }
 //+==================================================================+
 bool CanTrade()
   {
-   if(g_emergency){ g_status="emergency"; return false; }
-   if(g_haltWeek){ g_status="weekly DD halt"; return false; }
-   if(g_haltDay){ g_status="daily DD halt"; return false; }
-   if(g_consec>=InpMaxConsecLoss){ g_status="loss-streak pause"; return false; }
-   if(SpreadPct()>InpMaxSpreadPct){ g_status="spread too high"; return false; }
+   if(g_emergency){ g_status="emergency"; g_noTradeWhy="emergency drawdown"; return false; }
+   if(g_haltWeek){ g_status="weekly DD halt"; g_noTradeWhy="weekly drawdown limit"; return false; }
+   if(g_haltDay){ g_status="daily DD halt"; g_noTradeWhy="daily drawdown limit"; return false; }
+   if(g_consec>=InpMaxConsecLoss)
+     {
+      // Temporary pause that auto-resumes after a cooldown (does NOT get
+      // stuck waiting for a win it can never make while paused).
+      if(g_pauseUntil==0) g_pauseUntil=TimeCurrent()+InpPauseMinutes*60;
+      if(TimeCurrent()>=g_pauseUntil)
+        { g_consec=0; g_pauseUntil=0; Print("Loss-streak cooldown over: resuming."); }
+      else
+        {
+         g_status="loss-streak pause";
+         g_noTradeWhy=StringFormat("%d losses; resume in %d min",
+                       g_consec,(int)((g_pauseUntil-TimeCurrent())/60)+1);
+         return false;
+        }
+     }
+   if(SpreadPct()>InpMaxSpreadPct){ g_status="spread too high"; g_noTradeWhy="spread too high"; return false; }
+   g_noTradeWhy="";
    return true;
   }
 
@@ -481,18 +524,21 @@ void UpdateDashboard()
    double ddDay=(g_dayStartEq>0)?(g_dayStartEq-eq)/g_dayStartEq*100.0:0.0;
    string s="";
    s+="============== LexiAdaptive v2 ==============\n";
-   s+=StringFormat("Bullish Confidence : %.0f / 100\n",g_bull);
-   s+=StringFormat("Bearish Confidence : %.0f / 100\n",g_bear);
-   s+=StringFormat("Current Bias       : %s\n",biasTxt);
-   s+=StringFormat("Market Structure   : %s\n",struc);
-   s+=StringFormat("Open Trades        : %d\n",OpenCount());
-   s+=StringFormat("Floating P/L       : %.2f %s\n",BasketProfit(),AccountInfoString(ACCOUNT_CURRENCY));
-   s+=StringFormat("Risk Exposure      : %.2f%% / %.0f%%\n",ExposurePct(),InpMaxExposure);
-   s+=StringFormat("Daily Drawdown     : %.2f%% / %.0f%%\n",ddDay,InpMaxDailyDD);
-   s+=StringFormat("Consec. Losses     : %d / %d\n",g_consec,InpMaxConsecLoss);
-   s+=StringFormat("Spread             : %.3f%% / %.3f%%\n",SpreadPct(),InpMaxSpreadPct);
-   s+=StringFormat("Open>=%.0f  Add>=%.0f  BiasGap>=%.0f\n",InpOpenConf,InpAddConf,InpBiasMargin);
-   s+=StringFormat("EA Status          : %s\n",g_status);
+   s+=StringFormat("Bullish Score : %.0f   Bearish Score : %.0f\n",g_bull,g_bear);
+   s+=StringFormat("Bull reasons : %s\n",g_bullWhy);
+   s+=StringFormat("Bear reasons : %s\n",g_bearWhy);
+   s+=StringFormat("Current Bias : %s   (%s)\n",biasTxt,g_biasWhy);
+   s+=StringFormat("Structure    : %s\n",struc);
+   s+="---------------------------------------------\n";
+   s+=StringFormat("Open Trades  : %d   Floating P/L : %.2f %s\n",OpenCount(),BasketProfit(),AccountInfoString(ACCOUNT_CURRENCY));
+   s+=StringFormat("Exposure     : %.2f%%/%.0f%%   DailyDD : %.2f%%/%.0f%%\n",ExposurePct(),InpMaxExposure,ddDay,InpMaxDailyDD);
+   s+=StringFormat("Consec Loss  : %d/%d   Spread : %.3f%%/%.3f%%\n",g_consec,InpMaxConsecLoss,SpreadPct(),InpMaxSpreadPct);
+   s+=StringFormat("Thresholds   : Open>=%.0f Add>=%.0f Gap>=%.0f\n",InpOpenConf,InpAddConf,InpBiasMargin);
+   s+="---------------------------------------------\n";
+   s+=StringFormat("Reason no-trade : %s\n",(g_noTradeWhy==""?"-":g_noTradeWhy));
+   s+=StringFormat("Reason entry    : %s\n",(g_entryWhy==""?"-":g_entryWhy));
+   s+=StringFormat("Reason exit     : %s\n",(g_exitWhy==""?"-":g_exitWhy));
+   s+=StringFormat("EA Status       : %s\n",g_status);
    s+="=============================================";
    Comment(s);
   }
