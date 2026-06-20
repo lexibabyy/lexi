@@ -134,6 +134,9 @@ void PlaceStop(int trend)
       double sl=NormalizeDouble(price-slDist,_Digits);
       if(trade.BuyStop(lot,price,_Symbol,sl,0.0,ORDER_TIME_GTC,0,"LexiBreakout"))
          g_status="buy-stop placed (uptrend)";
+      else
+        { g_status=StringFormat("buy-stop FAILED: %d %s",trade.ResultRetcode(),trade.ResultRetcodeDescription());
+          Print(g_status); }
      }
    else
      {
@@ -141,6 +144,9 @@ void PlaceStop(int trend)
       double sl=NormalizeDouble(price+slDist,_Digits);
       if(trade.SellStop(lot,price,_Symbol,sl,0.0,ORDER_TIME_GTC,0,"LexiBreakout"))
          g_status="sell-stop placed (downtrend)";
+      else
+        { g_status=StringFormat("sell-stop FAILED: %d %s",trade.ResultRetcode(),trade.ResultRetcodeDescription());
+          Print(g_status); }
      }
   }
 
