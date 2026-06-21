@@ -44,7 +44,9 @@ input double InpMaxStretchATR = 1.2;  // Block entry if price is > this many ATR
 input double InpRSIExhaust    = 76.0; // Block longs above this RSI / shorts below (100-this)
 
 //--- Position building / risk --------------------------------------
-input double InpBaseRiskPct  = 0.25; // % risk per entry (scaled up by confidence)
+input bool   InpUseFixedLot  = true; // SAFE: use a fixed lot instead of % risk sizing
+input double InpFixedLot      = 0.01;// Small fixed lot (raise slowly only after it proves itself)
+input double InpBaseRiskPct  = 0.25; // % risk per entry (used only if fixed lot is off)
 input double InpMaxRiskMult   = 2.0;
 input double InpMaxExposure   = 5.0; // % max total open risk
 input double InpSLAtrMult     = 2.0;
@@ -470,12 +472,18 @@ double ExposurePct()
 
 double CalcLot(double slDist,double riskPct)
   {
-   double eq=AccountInfoDouble(ACCOUNT_EQUITY),riskMoney=eq*(riskPct/100.0);
-   double tv=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE),ts=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
-   if(tv<=0||ts<=0||slDist<=0) return 0.0;
-   double lossPerLot=(slDist/ts)*tv; if(lossPerLot<=0) return 0.0;
-   double lot=riskMoney/lossPerLot;
    double step=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP),vmin=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MIN),vmax=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MAX);
+   double lot;
+   if(InpUseFixedLot)
+      lot=InpFixedLot;                       // SAFE: fixed lot, no surprise risk sizing
+   else
+     {
+      double eq=AccountInfoDouble(ACCOUNT_EQUITY),riskMoney=eq*(riskPct/100.0);
+      double tv=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE),ts=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
+      if(tv<=0||ts<=0||slDist<=0) return 0.0;
+      double lossPerLot=(slDist/ts)*tv; if(lossPerLot<=0) return 0.0;
+      lot=riskMoney/lossPerLot;
+     }
    if(step>0) lot=MathFloor(lot/step)*step;
    lot=MathMax(lot,vmin); lot=MathMin(lot,vmax);
    return NormalizeDouble(lot,2);
