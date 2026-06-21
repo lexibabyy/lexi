@@ -62,6 +62,7 @@ input bool   InpDashboard = true;
 CTrade   trade;
 int      hEf=INVALID_HANDLE,hEs=INVALID_HANDLE,hATR=INVALID_HANDLE;
 datetime g_lastBar=0,g_day=0;
+int      g_lastTrend=0;
 double   g_dayStartEq=0;
 bool     g_haltDay=false;
 string   g_status="init";
@@ -98,23 +99,22 @@ void OnTick()
    QuickTP();                          // bank small profits immediately
    ManageProtection();                 // BE + trailing on every tick
 
-   datetime bt=iTime(_Symbol,InpTF,0);
-   if(bt!=g_lastBar)
+   int trend=Trend();
+   if(trend==0){ g_status="no trend"; if(InpDashboard) Dashboard(); return; }
+
+   // On a trend flip: clear stale pendings and (optionally) drop the old side.
+   if(trend!=g_lastTrend)
      {
-      g_lastBar=bt;
-      int trend=Trend();
-
-      if(InpCloseOnFlip && trend!=0)
-        {
-         if(trend>0) CloseSide(-1);     // flipped up -> drop shorts
-         else        CloseSide(1);      // flipped down -> drop longs
-        }
-
-      DeleteMyPending();                // refresh the breakout order each bar
-      if(CanTrade() && trend!=0 && CountMyPositions()<InpMaxPositions)
-         PlaceStop(trend);
-      else if(trend==0) g_status="no trend";
+      DeleteMyPending();
+      if(InpCloseOnFlip){ if(trend>0) CloseSide(-1); else CloseSide(1); }
+      g_lastTrend=trend;
      }
+
+   // STACK: place a new breakout order whenever none is waiting and there is
+   // room. As each one fills, the next tick places another -> fast stacking.
+   if(CanTrade() && CountMyPositions()<InpMaxPositions && CountMyPending()==0)
+      PlaceStop(trend);
+
    if(InpDashboard) Dashboard();
   }
 
