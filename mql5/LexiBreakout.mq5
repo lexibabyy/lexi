@@ -32,13 +32,13 @@ input int    InpMaxPositions = 10;   // Max stacked positions
 input bool   InpCloseOnFlip  = true; // Close opposite side when trend flips
 
 //--- Take profit ----------------------------------------------------
-input bool   InpUseQuickTP    = true; // Bank each position as soon as it shows a small profit
+input bool   InpUseQuickTP    = false;// Bank each position as soon as it shows a small profit
 input double InpQuickTPmoney  = 1.0;  // Per-position profit to bank (account ccy)
 input double InpBasketTPmoney = 0.0;  // Close ALL when total profit >= this (0=off)
 
 //--- Position size --------------------------------------------------
 input double InpRiskPct     = 0.25;
-input bool   InpUseFixedLot = false;
+input bool   InpUseFixedLot = true;  // Same fixed lot per stacked position (like the reference)
 input double InpFixedLot      = 0.02;
 
 //--- Protect each position -----------------------------------------
