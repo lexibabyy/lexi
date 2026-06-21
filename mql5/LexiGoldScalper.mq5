@@ -22,7 +22,7 @@ enum ENUM_DIR { DIR_BOTH=0, DIR_BUY_ONLY=1, DIR_SELL_ONLY=2 };
 //--- Core -----------------------------------------------------------
 input ENUM_TIMEFRAMES InpTF = PERIOD_M1;
 input ENUM_DIR InpDirection = DIR_BOTH;     // Allowed trade direction
-input bool   InpUseHTFTrend = false;        // Confirm with higher timeframe (filters retracements)
+input bool   InpUseHTFTrend = true;         // Confirm with higher timeframe (filters retracements)
 input ENUM_TIMEFRAMES InpHTF = PERIOD_M15;  // Higher timeframe for confirmation
 input int    InpEmaFast   = 20;
 input int    InpEmaSlow   = 50;
@@ -50,8 +50,8 @@ input int    InpBELockPts     = 5;     // Lock SL this many points above entry
 
 //--- Position / risk -----------------------------------------------
 input double InpRiskPct      = 0.25;
-input bool   InpUseFixedLot  = false;  // Use a fixed lot instead of % risk sizing
-input double InpFixedLot      = 0.01;  // Fixed lot size (you control it)
+input bool   InpUseFixedLot  = true;   // SAFE: fixed lot (avoids huge risk-based lots)
+input double InpFixedLot      = 0.01;  // Small fixed lot (raise slowly only after it proves itself)
 input int    InpMaxPositions = 3;
 input bool   InpFlipOpposite = true;
 
