@@ -27,6 +27,7 @@ input int    InpATRPeriod = 14;
 //--- Entry / stacking ----------------------------------------------
 input double InpTPatr        = 0.0;  // Take-profit (x ATR); 0 = NO TP, ride with candle trailing
 input double InpSLatr        = 1.20; // Initial stop-loss distance (x ATR)
+input double InpMinDistPct   = 0.05; // Min SL/TP distance as % of price (broker safety for BTC)
 input int    InpMaxPositions = 15;   // Max stacked positions
 input bool   InpCloseOnFlip  = true; // Close opposite side when trend flips
 
@@ -132,9 +133,13 @@ void OpenMarket(int trend)
   {
    if(SpreadPct()>InpMaxSpreadPct){ g_status="spread too high"; return; }
    double atr=CurrentATR(); if(atr<=0.0){ g_status="no ATR"; return; }
-   double slDist=InpSLatr*atr;
-   double tpDist=(InpTPatr>0.0)?InpTPatr*atr:0.0;
    double ask=SymbolInfoDouble(_Symbol,SYMBOL_ASK),bid=SymbolInfoDouble(_Symbol,SYMBOL_BID);
+   double point=SymbolInfoDouble(_Symbol,SYMBOL_POINT);
+   long   stops=SymbolInfoInteger(_Symbol,SYMBOL_TRADE_STOPS_LEVEL);
+   // SL/TP must clear the broker's minimum stop distance.
+   double minDist=MathMax((double)(stops+20)*point, ask*InpMinDistPct/100.0);
+   double slDist=MathMax(InpSLatr*atr,minDist);
+   double tpDist=(InpTPatr>0.0)?MathMax(InpTPatr*atr,minDist):0.0;
    double lot=CalcLot(slDist); if(lot<=0.0){ g_status="lot=0"; return; }
 
    double price,sl,tp;
