@@ -25,7 +25,8 @@ input int    InpEmaSlow   = 50;
 input int    InpATRPeriod = 14;
 
 //--- Entry / stacking ----------------------------------------------
-input bool   InpFollowCandle = true; // Direction follows each candle (up=BUY, down=SELL) not EMA trend
+input int    InpStepPoints   = 100;  // Enter every time price MOVES this many points (intra-candle)
+input bool   InpFollowCandle = true; // (unused with step entry) direction follows the live move
 input double InpTPatr        = 0.0;  // Take-profit (x ATR); 0 = NO TP, ride with candle trailing
 input double InpSLatr        = 1.20; // Initial stop-loss distance (x ATR)
 input double InpMinDistPct   = 0.05; // Min SL/TP distance as % of price (broker safety for BTC)
@@ -68,6 +69,7 @@ CTrade   trade;
 int      hEf=INVALID_HANDLE,hEs=INVALID_HANDLE,hATR=INVALID_HANDLE;
 datetime g_lastBar=0,g_day=0;
 int      g_lastTrend=0;
+double   g_lastEntryPrice=0.0;
 double   g_dayStartEq=0;
 bool     g_haltDay=false;
 string   g_status="init";
@@ -104,24 +106,25 @@ void OnTick()
    QuickTP();                          // bank small profits immediately
    ManageProtection();                 // BE + trailing on every tick
 
-   int trend=Direction();
-   if(trend==0){ g_status="flat candle"; if(InpDashboard) Dashboard(); return; }
+   // Step entry: act on the LIVE move (intra-candle), not at candle close.
+   // Each time price travels InpStepPoints, enter in the move's direction.
+   double price=SymbolInfoDouble(_Symbol,SYMBOL_BID);
+   double pt=SymbolInfoDouble(_Symbol,SYMBOL_POINT);
+   if(g_lastEntryPrice<=0.0) g_lastEntryPrice=price;
+   double moved=price-g_lastEntryPrice;
+   double step=InpStepPoints*pt;
 
-   // On a trend flip, drop the old side.
-   if(trend!=g_lastTrend)
+   if(MathAbs(moved)>=step)
      {
-      if(InpCloseOnFlip){ if(trend>0) CloseSide(-1); else CloseSide(1); }
-      g_lastTrend=trend;
-     }
-
-   // Enter with the trend on every new candle (small TP/SL, banks fast,
-   // stacks up to the max). Each position has its own TP + SL.
-   datetime bt=iTime(_Symbol,InpTF,0);
-   if(bt!=g_lastBar)
-     {
-      g_lastBar=bt;
+      int dir=(moved>0.0)?1:-1;            // follow the direction of the move
+      g_lastEntryPrice=price;
+      if(dir!=g_lastTrend)
+        {
+         if(InpCloseOnFlip){ if(dir>0) CloseSide(-1); else CloseSide(1); }
+         g_lastTrend=dir;
+        }
       if(CanTrade() && CountMyPositions()<InpMaxPositions)
-         OpenMarket(trend);
+         OpenMarket(dir);
      }
 
    if(InpDashboard) Dashboard();
@@ -321,8 +324,8 @@ datetime StartOfDay(datetime t){ MqlDateTime s; TimeToStruct(t,s); s.hour=0; s.m
 //+==================================================================+
 void Dashboard()
   {
-   int tr=Direction();
-   string td=(tr>0?"UP candle -> BUY":tr<0?"DOWN candle -> SELL":"flat candle");
+   int tr=g_lastTrend;
+   string td=(tr>0?"moved UP -> BUY":tr<0?"moved DOWN -> SELL":"waiting move");
    string s="";
    s+="============== LexiBreakout ==============\n";
    s+=StringFormat("Trend       : %s\n",td);
