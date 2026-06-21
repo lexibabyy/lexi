@@ -24,12 +24,15 @@ input int    InpEmaFast   = 20;
 input int    InpEmaSlow   = 50;
 input int    InpATRPeriod = 14;
 
-//--- Breakout / stacking -------------------------------------------
-input double InpTriggerATR  = 0.30; // Stop order this far from price (x ATR)
-input double InpMinDistPct  = 0.05; // Min distance as % of price (safety for fast symbols like BTC)
-input double InpSLatr        = 1.20; // Stop-loss distance (x ATR)
-input int    InpMaxPositions = 10;   // Max stacked positions
+//--- Entry / stacking ----------------------------------------------
+input double InpTPatr        = 0.0;  // Take-profit (x ATR); 0 = NO TP, ride with candle trailing
+input double InpSLatr        = 1.20; // Initial stop-loss distance (x ATR)
+input int    InpMaxPositions = 15;   // Max stacked positions
 input bool   InpCloseOnFlip  = true; // Close opposite side when trend flips
+
+//--- Candle trailing (SL follows each candle -> tiny loss on reversal)
+input bool   InpCandleTrail  = true; // Trail the stop to follow each candle
+input int    InpCandleBufPts = 50;   // Buffer below/above the candle (points)
 
 //--- Take profit ----------------------------------------------------
 input bool   InpUseQuickTP    = false;// Bank each position as soon as it shows a small profit
@@ -102,59 +105,49 @@ void OnTick()
    int trend=Trend();
    if(trend==0){ g_status="no trend"; if(InpDashboard) Dashboard(); return; }
 
-   // On a trend flip: clear stale pendings and (optionally) drop the old side.
+   // On a trend flip, drop the old side.
    if(trend!=g_lastTrend)
      {
-      DeleteMyPending();
       if(InpCloseOnFlip){ if(trend>0) CloseSide(-1); else CloseSide(1); }
       g_lastTrend=trend;
      }
 
-   // STACK: place a new breakout order whenever none is waiting and there is
-   // room. As each one fills, the next tick places another -> fast stacking.
-   if(CanTrade() && CountMyPositions()<InpMaxPositions && CountMyPending()==0)
-      PlaceStop(trend);
+   // Enter with the trend on every new candle (small TP/SL, banks fast,
+   // stacks up to the max). Each position has its own TP + SL.
+   datetime bt=iTime(_Symbol,InpTF,0);
+   if(bt!=g_lastBar)
+     {
+      g_lastBar=bt;
+      if(CanTrade() && CountMyPositions()<InpMaxPositions)
+         OpenMarket(trend);
+     }
 
    if(InpDashboard) Dashboard();
   }
 
 //+==================================================================+
-//|  BREAKOUT ORDER                                                  |
+//|  MARKET ENTRY (small TP/SL, banks fast, stacks with the trend)   |
 //+==================================================================+
-void PlaceStop(int trend)
+void OpenMarket(int trend)
   {
    if(SpreadPct()>InpMaxSpreadPct){ g_status="spread too high"; return; }
    double atr=CurrentATR(); if(atr<=0.0){ g_status="no ATR"; return; }
+   double slDist=InpSLatr*atr;
+   double tpDist=(InpTPatr>0.0)?InpTPatr*atr:0.0;
    double ask=SymbolInfoDouble(_Symbol,SYMBOL_ASK),bid=SymbolInfoDouble(_Symbol,SYMBOL_BID);
-   double point=SymbolInfoDouble(_Symbol,SYMBOL_POINT);
-   long   stops=SymbolInfoInteger(_Symbol,SYMBOL_TRADE_STOPS_LEVEL);
-   // Minimum safe distance: broker stops-level, OR a % of price (covers
-   // fast instruments like BTC where a tiny trigger gets crossed instantly).
-   double minDist=MathMax((double)(stops+20)*point, ask*InpMinDistPct/100.0);
-   double trig=MathMax(InpTriggerATR*atr,minDist);   // stop order distance
-   double slDist=MathMax(InpSLatr*atr,minDist);      // SL distance
    double lot=CalcLot(slDist); if(lot<=0.0){ g_status="lot=0"; return; }
 
-   if(trend>0)
-     {
-      double price=NormalizeDouble(ask+trig,_Digits);
-      double sl=NormalizeDouble(price-slDist,_Digits);
-      if(trade.BuyStop(lot,price,_Symbol,sl,0.0,ORDER_TIME_GTC,0,"LexiBreakout"))
-         g_status="buy-stop placed (uptrend)";
-      else
-        { g_status=StringFormat("buy-stop FAILED: %d %s",trade.ResultRetcode(),trade.ResultRetcodeDescription());
-          Print(g_status); }
-     }
+   double price,sl,tp;
+   if(trend>0){ price=ask; sl=price-slDist; tp=(tpDist>0.0?price+tpDist:0.0); }
+   else       { price=bid; sl=price+slDist; tp=(tpDist>0.0?price-tpDist:0.0); }
+   sl=NormalizeDouble(sl,_Digits); tp=NormalizeDouble(tp,_Digits);
+
+   bool ok=(trend>0)?trade.Buy(lot,_Symbol,price,sl,tp,"LexiBreakout")
+                    :trade.Sell(lot,_Symbol,price,sl,tp,"LexiBreakout");
+   if(ok) g_status=(trend>0?"opened BUY (stack)":"opened SELL (stack)");
    else
-     {
-      double price=NormalizeDouble(bid-trig,_Digits);
-      double sl=NormalizeDouble(price+slDist,_Digits);
-      if(trade.SellStop(lot,price,_Symbol,sl,0.0,ORDER_TIME_GTC,0,"LexiBreakout"))
-         g_status="sell-stop placed (downtrend)";
-      else
-        { g_status=StringFormat("sell-stop FAILED: %d %s",trade.ResultRetcode(),trade.ResultRetcodeDescription());
-          Print(g_status); }
-     }
+     { g_status=StringFormat("order FAILED: %d %s",trade.ResultRetcode(),trade.ResultRetcodeDescription());
+       Print(g_status); }
   }
 
 //+==================================================================+
@@ -203,6 +196,7 @@ void ManageProtection()
          double n=sl;
          if(InpUseEarlyBE && (bid-entry)>=InpBETriggerPts*point) n=MathMax(n,entry+InpBELockPts*point);
          if(InpUseTrailing && (bid-entry)>=InpTrailStartPts*point) n=MathMax(n,bid-InpTrailDistPts*point);
+         if(InpCandleTrail) n=MathMax(n,iLow(_Symbol,InpTF,1)-InpCandleBufPts*point); // follow candle
          n=NormalizeDouble(n,_Digits);
          if(n>sl && n<bid) trade.PositionModify(t,n,tp);
         }
@@ -211,6 +205,7 @@ void ManageProtection()
          double n=sl;
          if(InpUseEarlyBE && (entry-ask)>=InpBETriggerPts*point) n=MathMin((sl==0.0?entry:n),entry-InpBELockPts*point);
          if(InpUseTrailing && (entry-ask)>=InpTrailStartPts*point) n=MathMin(n,ask+InpTrailDistPts*point);
+         if(InpCandleTrail){ double cs=iHigh(_Symbol,InpTF,1)+InpCandleBufPts*point; n=(sl==0.0?cs:MathMin(n,cs)); } // follow candle
          n=NormalizeDouble(n,_Digits);
          if((sl==0.0||n<sl) && n>ask) trade.PositionModify(t,n,tp);
         }
