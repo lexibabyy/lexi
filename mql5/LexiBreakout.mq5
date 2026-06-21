@@ -35,7 +35,7 @@ input bool   InpCandleTrail  = true; // Trail the stop to follow each candle
 input int    InpCandleBufPts = 50;   // Buffer below/above the candle (points)
 
 //--- Take profit ----------------------------------------------------
-input bool   InpUseQuickTP    = false;// Bank each position as soon as it shows a small profit
+input bool   InpUseQuickTP    = true; // Auto-close each position once it shows a small profit
 input double InpQuickTPmoney  = 1.0;  // Per-position profit to bank (account ccy)
 input double InpBasketTPmoney = 0.0;  // Close ALL when total profit >= this (0=off)
 
