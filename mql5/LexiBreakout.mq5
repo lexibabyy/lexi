@@ -25,6 +25,7 @@ input int    InpEmaSlow   = 50;
 input int    InpATRPeriod = 14;
 
 //--- Entry / stacking ----------------------------------------------
+input bool   InpFollowCandle = true; // Direction follows each candle (up=BUY, down=SELL) not EMA trend
 input double InpTPatr        = 0.0;  // Take-profit (x ATR); 0 = NO TP, ride with candle trailing
 input double InpSLatr        = 1.20; // Initial stop-loss distance (x ATR)
 input double InpMinDistPct   = 0.05; // Min SL/TP distance as % of price (broker safety for BTC)
@@ -103,8 +104,8 @@ void OnTick()
    QuickTP();                          // bank small profits immediately
    ManageProtection();                 // BE + trailing on every tick
 
-   int trend=Trend();
-   if(trend==0){ g_status="no trend"; if(InpDashboard) Dashboard(); return; }
+   int trend=Direction();
+   if(trend==0){ g_status="flat candle"; if(InpDashboard) Dashboard(); return; }
 
    // On a trend flip, drop the old side.
    if(trend!=g_lastTrend)
@@ -231,6 +232,19 @@ int Trend()
    if(ef[0]<es[0]) return -1;
    return 0;
   }
+// Direction the EA acts on: follow the last candle (up=buy, down=sell)
+// so entries track the real move, or fall back to the EMA trend.
+int Direction()
+  {
+   if(InpFollowCandle)
+     {
+      double o=iOpen(_Symbol,InpTF,1),c=iClose(_Symbol,InpTF,1);
+      if(c>o) return 1;
+      if(c<o) return -1;
+      return 0;
+     }
+   return Trend();
+  }
 double CurrentATR(){ double b[1]; if(CopyBuffer(hATR,0,1,1,b)<1) return 0.0; return b[0]; }
 double SpreadPct(){ double a=SymbolInfoDouble(_Symbol,SYMBOL_ASK),b=SymbolInfoDouble(_Symbol,SYMBOL_BID); if(b<=0) return 0.0; return (a-b)/b*100.0; }
 
@@ -304,8 +318,8 @@ datetime StartOfDay(datetime t){ MqlDateTime s; TimeToStruct(t,s); s.hour=0; s.m
 //+==================================================================+
 void Dashboard()
   {
-   int tr=Trend();
-   string td=(tr>0?"UPTREND (stack BUY)":tr<0?"DOWNTREND (stack SELL)":"no trend");
+   int tr=Direction();
+   string td=(tr>0?"UP candle -> BUY":tr<0?"DOWN candle -> SELL":"flat candle");
    string s="";
    s+="============== LexiBreakout ==============\n";
    s+=StringFormat("Trend       : %s\n",td);
