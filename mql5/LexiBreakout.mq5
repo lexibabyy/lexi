@@ -190,6 +190,7 @@ void QuickTP()
 void ManageProtection()
   {
    double point=SymbolInfoDouble(_Symbol,SYMBOL_POINT);
+   double minStop=(double)(SymbolInfoInteger(_Symbol,SYMBOL_TRADE_STOPS_LEVEL)+20)*point;
    double bid=SymbolInfoDouble(_Symbol,SYMBOL_BID),ask=SymbolInfoDouble(_Symbol,SYMBOL_ASK);
    for(int i=PositionsTotal()-1;i>=0;i--)
      {
@@ -205,6 +206,7 @@ void ManageProtection()
          if(InpUseEarlyBE && (bid-entry)>=InpBETriggerPts*point) n=MathMax(n,entry+InpBELockPts*point);
          if(InpUseTrailing && (bid-entry)>=InpTrailStartPts*point) n=MathMax(n,bid-InpTrailDistPts*point);
          if(InpCandleTrail) n=MathMax(n,iLow(_Symbol,InpTF,1)-InpCandleBufPts*point); // follow candle
+         if(n>bid-minStop) n=bid-minStop;     // keep SL the broker's min distance below price
          n=NormalizeDouble(n,_Digits);
          if(n>sl && n<bid) trade.PositionModify(t,n,tp);
         }
@@ -214,6 +216,7 @@ void ManageProtection()
          if(InpUseEarlyBE && (entry-ask)>=InpBETriggerPts*point) n=MathMin((sl==0.0?entry:n),entry-InpBELockPts*point);
          if(InpUseTrailing && (entry-ask)>=InpTrailStartPts*point) n=MathMin(n,ask+InpTrailDistPts*point);
          if(InpCandleTrail){ double cs=iHigh(_Symbol,InpTF,1)+InpCandleBufPts*point; n=(sl==0.0?cs:MathMin(n,cs)); } // follow candle
+         if(n<ask+minStop) n=ask+minStop;     // keep SL the broker's min distance above price
          n=NormalizeDouble(n,_Digits);
          if((sl==0.0||n<sl) && n>ask) trade.PositionModify(t,n,tp);
         }
