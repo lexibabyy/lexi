@@ -37,9 +37,11 @@ input bool   InpCloseOnFlip  = true; // Close opposite side when trend flips
 input bool   InpCandleTrail  = true; // Trail the stop to follow each candle
 input int    InpCandleBufPts = 50;   // Buffer below/above the candle (points)
 
-//--- Take profit ----------------------------------------------------
+//--- Take profit / fast loss cut -----------------------------------
 input bool   InpUseQuickTP    = true; // Auto-close each position once it shows a small profit
 input double InpQuickTPmoney  = 1.0;  // Per-position profit to bank (account ccy)
+input bool   InpUseQuickLoss  = true; // Auto-close at a small LOSS too (cut before the SL)
+input double InpQuickLossMoney= 1.0;  // Per-position loss to cut (account ccy)
 input double InpBasketTPmoney = 0.0;  // Close ALL when total profit >= this (0=off)
 
 //--- Position size --------------------------------------------------
@@ -183,6 +185,18 @@ void QuickTP()
          if(PositionGetInteger(POSITION_MAGIC)!=InpMagic) continue;
          if(PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
          if(PositionGetDouble(POSITION_PROFIT)>=InpQuickTPmoney) trade.PositionClose(t);
+        }
+     }
+   // Per-position: cut a small loss immediately, without waiting for the SL.
+   if(InpUseQuickLoss && InpQuickLossMoney>0.0)
+     {
+      for(int i=PositionsTotal()-1;i>=0;i--)
+        {
+         ulong t=PositionGetTicket(i);
+         if(!PositionSelectByTicket(t)) continue;
+         if(PositionGetInteger(POSITION_MAGIC)!=InpMagic) continue;
+         if(PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
+         if(PositionGetDouble(POSITION_PROFIT)<=-InpQuickLossMoney) trade.PositionClose(t);
         }
      }
   }
