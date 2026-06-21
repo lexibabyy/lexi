@@ -143,8 +143,10 @@ void OpenMarket(int trend)
    double lot=CalcLot(slDist); if(lot<=0.0){ g_status="lot=0"; return; }
 
    double price,sl,tp;
-   if(trend>0){ price=ask; sl=price-slDist; tp=(tpDist>0.0?price+tpDist:0.0); }
-   else       { price=bid; sl=price+slDist; tp=(tpDist>0.0?price-tpDist:0.0); }
+   // SL is measured from the side the position closes on (bid for a buy,
+   // ask for a sell) so the spread can't push it onto the wrong side.
+   if(trend>0){ price=ask; sl=bid-slDist; tp=(tpDist>0.0?ask+tpDist:0.0); }
+   else       { price=bid; sl=ask+slDist; tp=(tpDist>0.0?bid-tpDist:0.0); }
    sl=NormalizeDouble(sl,_Digits); tp=NormalizeDouble(tp,_Digits);
 
    bool ok=(trend>0)?trade.Buy(lot,_Symbol,price,sl,tp,"LexiBreakout")
