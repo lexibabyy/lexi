@@ -22,16 +22,16 @@ enum ENUM_DIR { DIR_BOTH=0, DIR_BUY_ONLY=1, DIR_SELL_ONLY=2 };
 //--- Core -----------------------------------------------------------
 input ENUM_TIMEFRAMES InpTF = PERIOD_M1;
 input ENUM_DIR InpDirection = DIR_BOTH;     // Allowed trade direction
-input bool   InpUseHTFTrend = true;         // Confirm with higher timeframe (filters retracements)
+input bool   InpUseHTFTrend = false;        // HTF confirm OFF by default = more trades (scalper)
 input ENUM_TIMEFRAMES InpHTF = PERIOD_M15;  // Higher timeframe for confirmation
 input int    InpEmaFast   = 20;
 input int    InpEmaSlow   = 50;
 input int    InpRSIPeriod = 14;
-input double InpRSIBuy    = 55.0;
-input double InpRSISell   = 45.0;
+input double InpRSIBuy    = 52.0;
+input double InpRSISell   = 48.0;
 input int    InpATRPeriod = 14;
-input double InpVolMult   = 1.1;
-input double InpBodyFrac  = 0.30;
+input double InpVolMult   = 1.0;
+input double InpBodyFrac  = 0.15;
 
 //--- Exits ----------------------------------------------------------
 input double InpTPmult    = 0.8;    // Auto Take profit = ATR x this
